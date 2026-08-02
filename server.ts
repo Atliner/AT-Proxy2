@@ -11,16 +11,19 @@ import https from 'https';
 // Memory store for subscription links generated in current session
 const subscriptionStore = new Map<string, { title: string; nodes: ProxyNode[] }>();
 
-// Memory store for shared Community Clean IP Pool
-let communityIpPool: { ip: string; isp: string; city: string; pingMs: number; status: string; addedAt: string; verifiedCount: number }[] = [
-  { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 120, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 15 },
-  { ip: '104.17.147.22', isp: 'Hamrah Avval (MCI)', city: 'Shiraz', pingMs: 145, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 12 },
-  { ip: '162.159.137.85', isp: 'Hamrah Avval (MCI)', city: 'Isfahan', pingMs: 130, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 18 },
-  { ip: '104.19.241.93', isp: 'Irancell (MTN)', city: 'Tehran', pingMs: 110, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 22 },
-  { ip: '172.67.74.155', isp: 'Irancell (MTN)', city: 'Tabriz', pingMs: 135, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 14 },
-  { ip: '104.16.12.56', isp: 'Mokhaberat (TCI)', city: 'Mashhad', pingMs: 150, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 9 },
-  { ip: 'icook.hk', isp: 'Global Edge CDN', city: 'Hong Kong', pingMs: 95, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 30 },
-  { ip: 'zyd.fr', isp: 'Global Edge CDN', city: 'Paris', pingMs: 165, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 11 },
+// Memory store for shared Community Clean IP & Domain Pool
+let communityIpPool: { ip: string; isp: string; city: string; pingMs: number; status: string; addedAt: string; verifiedCount: number; type: 'ip' | 'domain' }[] = [
+  { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 120, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 15, type: 'ip' },
+  { ip: '104.17.147.22', isp: 'Hamrah Avval (MCI)', city: 'Shiraz', pingMs: 145, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 12, type: 'ip' },
+  { ip: '162.159.137.85', isp: 'Hamrah Avval (MCI)', city: 'Isfahan', pingMs: 130, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 18, type: 'ip' },
+  { ip: '104.19.241.93', isp: 'Irancell (MTN)', city: 'Tehran', pingMs: 110, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 22, type: 'ip' },
+  { ip: '172.67.74.155', isp: 'Irancell (MTN)', city: 'Tabriz', pingMs: 135, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 14, type: 'ip' },
+  { ip: '104.16.12.56', isp: 'Mokhaberat (TCI)', city: 'Mashhad', pingMs: 150, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 9, type: 'ip' },
+  { ip: 'icook.hk', isp: 'Global Edge CDN', city: 'Hong Kong (SNI)', pingMs: 95, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 38, type: 'domain' },
+  { ip: 'zyd.fr', isp: 'Global Edge CDN', city: 'Paris (SNI)', pingMs: 140, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 29, type: 'domain' },
+  { ip: 'speed.cloudflare.com', isp: 'Cloudflare Network', city: 'Global CDN', pingMs: 105, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 45, type: 'domain' },
+  { ip: 'dash.cloudflare.com', isp: 'Cloudflare Core', city: 'Global CDN', pingMs: 112, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 31, type: 'domain' },
+  { ip: 'pages.dev', isp: 'Cloudflare Pages', city: 'Global Edge', pingMs: 118, status: 'ok', addedAt: new Date().toISOString(), verifiedCount: 24, type: 'domain' },
 ];
 
 async function startServer() {
@@ -321,17 +324,18 @@ async function startServer() {
     });
   });
 
-  // Sync / Contribute new clean IPs to Community Pool
+  // Sync / Contribute new clean IPs & Domains to Community Pool
   app.post('/api/clean-ips/sync', (req: Request, res: Response) => {
     try {
       const { items } = req.body;
       if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: 'Array of valid clean IP items required' });
+        return res.status(400).json({ error: 'Array of valid clean IP/domain items required' });
       }
 
       let addedCount = 0;
       items.forEach((item: any) => {
         if (!item.ip || typeof item.pingMs !== 'number' || item.pingMs > 800) return;
+        const isDomain = item.type === 'domain' || (item.ip && !item.ip.match(/^\d+\.\d+\.\d+\.\d+$/));
 
         const existing = communityIpPool.find(p => p.ip === item.ip);
         if (existing) {
@@ -339,39 +343,61 @@ async function startServer() {
           existing.verifiedCount = (existing.verifiedCount || 1) + 1;
           existing.status = 'ok';
           existing.addedAt = new Date().toISOString();
+          existing.type = isDomain ? 'domain' : 'ip';
         } else {
           communityIpPool.push({
             ip: item.ip,
-            isp: item.isp || 'Global Edge',
-            city: item.city || 'Verified Edge',
+            isp: item.isp || (isDomain ? 'Global Edge CDN' : 'Global Edge'),
+            city: item.city || (isDomain ? 'Clean SNI Domain' : 'Verified Edge'),
             pingMs: item.pingMs,
             status: 'ok',
             addedAt: new Date().toISOString(),
             verifiedCount: 1,
+            type: isDomain ? 'domain' : 'ip'
           });
           addedCount++;
         }
       });
 
-      // Keep top 100 best performing IPs in memory
+      // Keep top 120 best performing IPs/domains in memory
       communityIpPool.sort((a, b) => a.pingMs - b.pingMs);
-      if (communityIpPool.length > 100) {
-        communityIpPool = communityIpPool.slice(0, 100);
+      if (communityIpPool.length > 120) {
+        communityIpPool = communityIpPool.slice(0, 120);
       }
 
       return res.json({
         success: true,
         addedCount,
         poolSize: communityIpPool.length,
-        message: 'Top clean IPs synchronized to community pool successfully!'
+        message: 'Top clean IPs & domains synchronized to community pool successfully!'
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }
   });
 
-  // Auto-Discover fresh Cloudflare candidate IPs across subnets
+  // Auto-Discover fresh Cloudflare candidate IPs or Clean Domains
   app.get('/api/clean-ips/discover', (req: Request, res: Response) => {
+    const targetType = (req.query.type as string) || 'all';
+
+    const cleanDomainsList = [
+      { domain: 'icook.hk', city: 'Hong Kong (Clean SNI)' },
+      { domain: 'zyd.fr', city: 'Paris (Clean SNI)' },
+      { domain: 'speed.cloudflare.com', city: 'Global Cloudflare' },
+      { domain: 'dash.cloudflare.com', city: 'Cloudflare Core' },
+      { domain: 'pages.dev', city: 'Cloudflare Pages' },
+      { domain: 'workers.dev', city: 'Cloudflare Workers' },
+      { domain: 'cf-ipfs.com', city: 'IPFS Edge' },
+      { domain: 'trycloudflare.com', city: 'Cloudflare Tunnel' },
+      { domain: 'visa.com', city: 'Visa Edge CDN' },
+      { domain: 'time.is', city: 'Time.is Edge' },
+      { domain: 'udemy.com', city: 'Udemy CDN' },
+      { domain: 'subscene.com', city: 'Subscene CDN' },
+      { domain: 'cdn.jsdelivr.net', city: 'JsDelivr Edge' },
+      { domain: 'medium.com', city: 'Medium Edge CDN' },
+      { domain: 'zoom.us', city: 'Zoom Edge CDN' }
+    ];
+
     const subnets = [
       '104.16.', '104.17.', '104.18.', '104.19.', '104.21.',
       '162.159.', '172.67.', '188.114.', '141.101.', '172.64.'
@@ -381,22 +407,74 @@ async function startServer() {
     const cities = ['Tehran', 'Shiraz', 'Isfahan', 'Tabriz', 'Mashhad', 'Global Edge'];
 
     const freshDiscovered: any[] = [];
-    const count = parseInt(req.query.count as string) || 12;
+    const count = parseInt(req.query.count as string) || 10;
 
-    for (let i = 0; i < count; i++) {
-      const prefix = subnets[Math.floor(Math.random() * subnets.length)];
-      const b3 = Math.floor(Math.random() * 250) + 1;
-      const b4 = Math.floor(Math.random() * 254) + 1;
-      const candidateIp = `${prefix}${b3}.${b4}`;
-
-      freshDiscovered.push({
-        ip: candidateIp,
-        isp: isps[Math.floor(Math.random() * isps.length)],
-        city: cities[Math.floor(Math.random() * cities.length)],
-        pingMs: null,
-        status: 'idle',
-        discovered: true
+    if (targetType === 'domain') {
+      // Discover clean domains
+      const shuffled = [...cleanDomainsList].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, count);
+      selected.forEach(item => {
+        freshDiscovered.push({
+          ip: item.domain,
+          isp: 'Global Cloudflare CDN',
+          city: item.city,
+          pingMs: null,
+          status: 'idle',
+          discovered: true,
+          type: 'domain'
+        });
       });
+    } else if (targetType === 'ip') {
+      // Discover clean IPs
+      for (let i = 0; i < count; i++) {
+        const prefix = subnets[Math.floor(Math.random() * subnets.length)];
+        const b3 = Math.floor(Math.random() * 250) + 1;
+        const b4 = Math.floor(Math.random() * 254) + 1;
+        const candidateIp = `${prefix}${b3}.${b4}`;
+
+        freshDiscovered.push({
+          ip: candidateIp,
+          isp: isps[Math.floor(Math.random() * isps.length)],
+          city: cities[Math.floor(Math.random() * cities.length)],
+          pingMs: null,
+          status: 'idle',
+          discovered: true,
+          type: 'ip'
+        });
+      }
+    } else {
+      // Mixed IP & Domain discovery
+      const shuffledDomains = [...cleanDomainsList].sort(() => 0.5 - Math.random());
+      const selectedDomains = shuffledDomains.slice(0, Math.floor(count / 2));
+      selectedDomains.forEach(item => {
+        freshDiscovered.push({
+          ip: item.domain,
+          isp: 'Global Cloudflare CDN',
+          city: item.city,
+          pingMs: null,
+          status: 'idle',
+          discovered: true,
+          type: 'domain'
+        });
+      });
+
+      const ipCount = count - selectedDomains.length;
+      for (let i = 0; i < ipCount; i++) {
+        const prefix = subnets[Math.floor(Math.random() * subnets.length)];
+        const b3 = Math.floor(Math.random() * 250) + 1;
+        const b4 = Math.floor(Math.random() * 254) + 1;
+        const candidateIp = `${prefix}${b3}.${b4}`;
+
+        freshDiscovered.push({
+          ip: candidateIp,
+          isp: isps[Math.floor(Math.random() * isps.length)],
+          city: cities[Math.floor(Math.random() * cities.length)],
+          pingMs: null,
+          status: 'idle',
+          discovered: true,
+          type: 'ip'
+        });
+      }
     }
 
     return res.json({

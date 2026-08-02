@@ -59,13 +59,15 @@ export interface ProxyNode {
 }
 
 export interface CleanIpItem {
-  ip: string;
+  ip: string; // IP address or Clean Domain host (e.g. 104.16.51.111 or icook.hk)
   isp: string;
   city?: string;
   pingMs?: number | null;
   jitter?: number;
   status?: 'ok' | 'testing' | 'fail' | 'idle';
   lastChecked?: string;
+  type?: 'ip' | 'domain';
+  discovered?: boolean;
 }
 
 export interface WorkerScriptConfig {
