@@ -55,13 +55,14 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   // Discover fresh candidate Cloudflare IPs or Clean Domains
   const handleDiscover = async (targetType: 'ip' | 'domain' | 'all') => {
     setDiscovering(true);
+    setPoolSyncStatus(null);
     try {
       const resp = await fetch(`/api/clean-ips/discover?type=${targetType}&count=10`);
       const data = await resp.json();
       if (data.success && Array.isArray(data.discovered)) {
-        const existingSet = new Set(ipList.map((item) => item.ip));
+        const existingSet = new Set(ipList.map((item) => item.ip.toLowerCase()));
         const newItems: CleanIpItem[] = data.discovered
-          .filter((item: any) => !existingSet.has(item.ip))
+          .filter((item: any) => !existingSet.has(item.ip.toLowerCase()))
           .map((item: any) => ({
             ip: item.ip,
             isp: item.isp,
@@ -74,6 +75,19 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
         if (newItems.length > 0) {
           setIpList((prev) => [...newItems, ...prev]);
+          if (targetType === 'domain') setItemTypeFilter('domain');
+          if (targetType === 'ip') setItemTypeFilter('ip');
+          setPoolSyncStatus(
+            isFa
+              ? `🔍 تعداد ${newItems.length} مورد جدید ${targetType === 'domain' ? 'دامنه تمیز' : 'آی‌پی'} کشف و به بالای لیست اضافه گردید!`
+              : `🔍 Discovered ${newItems.length} new ${targetType} endpoints added to top of list!`
+          );
+        } else {
+          setPoolSyncStatus(
+            isFa
+              ? `💡 تمام موارد کشف شده در این نوبت در لیست شما موجود بودند. می‌توانید دکمه اسکن زنده را بزنید.`
+              : `💡 All discovered items were already in your list.`
+          );
         }
       }
     } catch (err) {
@@ -83,40 +97,57 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     }
   };
 
-  // Run live TCP ping scan across selected clean IPs & sync working ones to Community Pool
+  // Run live TCP ping scan across selected clean IPs in parallel batches & sync working ones to Community Pool
   const handleScanAll = async () => {
     setScanning(true);
     setPoolSyncStatus(null);
 
-    const updated = [...ipList];
+    const itemsToScan = filteredList.length > 0 ? [...filteredList] : [...ipList];
     const workingFound: CleanIpItem[] = [];
 
-    for (let i = 0; i < updated.length; i++) {
-      const item = updated[i];
-      item.status = 'testing';
-      setIpList([...updated]);
+    // Mark all items to scan as testing
+    setIpList((prev) =>
+      prev.map((item) =>
+        itemsToScan.some((t) => t.ip === item.ip) ? { ...item, status: 'testing' } : item
+      )
+    );
 
-      try {
-        const resp = await fetch('/api/ping', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetHost: item.ip, port: 443 }),
-        });
-        const data = await resp.json();
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < itemsToScan.length; i += BATCH_SIZE) {
+      const batch = itemsToScan.slice(i, i + BATCH_SIZE);
 
-        item.pingMs = data.pingMs;
-        item.status = data.pingMs < 3000 ? 'ok' : 'fail';
-        item.lastChecked = new Date().toLocaleTimeString();
+      await Promise.all(
+        batch.map(async (item) => {
+          try {
+            const resp = await fetch('/api/ping', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targetHost: item.ip, port: 443 }),
+            });
+            const data = await resp.json();
 
-        if (item.status === 'ok' && item.pingMs < 800) {
-          workingFound.push(item);
-        }
-      } catch (err) {
-        item.pingMs = 3000;
-        item.status = 'fail';
-      }
+            const isOk = data.status === 'ok' && data.pingMs < 3000;
+            const updatedItem: CleanIpItem = {
+              ...item,
+              pingMs: isOk ? data.pingMs : 3000,
+              status: isOk ? 'ok' : 'fail',
+              lastChecked: new Date().toLocaleTimeString(),
+            };
 
-      setIpList([...updated]);
+            if (isOk && data.pingMs < 800) {
+              workingFound.push(updatedItem);
+            }
+
+            setIpList((prev) =>
+              prev.map((p) => (p.ip === item.ip ? updatedItem : p))
+            );
+          } catch (err) {
+            setIpList((prev) =>
+              prev.map((p) => (p.ip === item.ip ? { ...p, pingMs: 3000, status: 'fail' } : p))
+            );
+          }
+        })
+      );
     }
 
     setScanning(false);
@@ -133,7 +164,7 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
         if (syncData.success) {
           setPoolSyncStatus(
             isFa
-              ? `✅ ${workingFound.length} مورد سالم (آی‌پی و دامنه) در استخر همگانی ذخیره شد!`
+              ? `✅ اسکن با موفقیت کامل شد! ${workingFound.length} مورد سالم (آی‌پی و دامنه) در استخر همگانی ذخیره شد!`
               : `✅ ${workingFound.length} best clean endpoints saved to Community Pool!`
           );
           fetchCommunityPool();
@@ -141,6 +172,12 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       } catch (err) {
         console.error('Error syncing to community pool:', err);
       }
+    } else {
+      setPoolSyncStatus(
+        isFa
+          ? `⚠️ اسکن پایان یافت. هیچ موردی پینگ پاسخگو دریافت نکرد.`
+          : `⚠️ Scan finished. No reachable hosts found.`
+      );
     }
   };
 

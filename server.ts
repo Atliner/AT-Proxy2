@@ -7,6 +7,7 @@ import { WorkerScriptConfig, ProxyNode } from './src/types';
 import { generateClashYaml, generateSingboxJson, generateBase64Sub, generateNodeUri } from './src/utils/configParsers';
 import http from 'http';
 import https from 'https';
+import net from 'net';
 
 // Memory store for subscription links generated in current session
 const subscriptionStore = new Map<string, { title: string; nodes: ProxyNode[] }>();
@@ -395,7 +396,21 @@ async function startServer() {
       { domain: 'subscene.com', city: 'Subscene CDN' },
       { domain: 'cdn.jsdelivr.net', city: 'JsDelivr Edge' },
       { domain: 'medium.com', city: 'Medium Edge CDN' },
-      { domain: 'zoom.us', city: 'Zoom Edge CDN' }
+      { domain: 'zoom.us', city: 'Zoom Edge CDN' },
+      { domain: 'arvancloud.ir', city: 'Arvan Edge CDN' },
+      { domain: 'dl.google.com', city: 'Google CDN Edge' },
+      { domain: 'pixabay.com', city: 'Pixabay Edge CDN' },
+      { domain: 'cdnjs.cloudflare.com', city: 'Cloudflare CDNJS' },
+      { domain: 'discord.com', city: 'Discord Edge CDN' },
+      { domain: 'gitlab.com', city: 'Gitlab Edge CDN' },
+      { domain: 'canva.com', city: 'Canva Edge CDN' },
+      { domain: 'vimeo.com', city: 'Vimeo Edge CDN' },
+      { domain: 'docker.com', city: 'Docker Hub Edge' },
+      { domain: 'python.org', city: 'Python Org Edge' },
+      { domain: 'snapp.ir', city: 'Snapp CDN' },
+      { domain: 'digikala.com', city: 'Digikala CDN' },
+      { domain: 'hostinger.com', city: 'Hostinger Edge' },
+      { domain: 'digitalocean.com', city: 'DigitalOcean CDN' }
     ];
 
     const subnets = [
@@ -485,56 +500,59 @@ async function startServer() {
 
   app.post('/api/ping', async (req: Request, res: Response) => {
     const { targetHost, port } = req.body;
-    const targetPort = port || 443;
+    const targetPort = Number(port) || 443;
 
-    if (!targetHost) {
+    if (!targetHost || typeof targetHost !== 'string') {
       return res.status(400).json({ error: 'targetHost is required' });
     }
 
+    const cleanHost = targetHost.trim();
     const startTime = Date.now();
 
-    try {
-      // Perform HTTPS / HTTP handshake to measure roundtrip latency
-      const protocol = targetPort === 443 ? https : http;
-      const request = protocol.get(`https://${targetHost}:${targetPort}/cdn-cgi/trace`, {
-        timeout: 3000,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      }, (response) => {
-        const pingMs = Date.now() - startTime;
-        res.json({
+    const socket = new net.Socket();
+    let responded = false;
+
+    const finish = (status: 'ok' | 'timeout', errMessage?: string) => {
+      if (responded) return;
+      responded = true;
+      socket.destroy();
+      const duration = Date.now() - startTime;
+      const pingMs = Math.max(15, duration);
+
+      if (status === 'ok') {
+        return res.json({
           status: 'ok',
-          targetHost,
-          pingMs,
-          statusCode: response.statusCode
+          targetHost: cleanHost,
+          pingMs
         });
-      });
-
-      request.on('error', (err) => {
-        const pingMs = Date.now() - startTime;
-        // Even if CF trace is blocked, TCP handshake response time indicates reachability
-        res.json({
+      } else {
+        return res.json({
           status: 'timeout',
-          targetHost,
-          pingMs: pingMs > 3000 ? 3000 : pingMs,
-          error: err.message
+          targetHost: cleanHost,
+          pingMs: 3000,
+          error: errMessage || 'Connection timed out'
         });
-      });
+      }
+    };
 
-      request.on('timeout', () => {
-        request.destroy();
-        res.json({
-          status: 'timeout',
-          targetHost,
-          pingMs: 3000
-        });
-      });
+    socket.setTimeout(2200);
+
+    socket.on('connect', () => {
+      finish('ok');
+    });
+
+    socket.on('timeout', () => {
+      finish('timeout', 'TCP Connection Timeout');
+    });
+
+    socket.on('error', (err) => {
+      finish('timeout', err.message);
+    });
+
+    try {
+      socket.connect(targetPort, cleanHost);
     } catch (err: any) {
-      res.json({
-        status: 'error',
-        targetHost,
-        pingMs: 3000,
-        error: err.message
-      });
+      finish('timeout', err.message);
     }
   });
 
