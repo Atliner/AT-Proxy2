@@ -381,55 +381,55 @@ async function startServer() {
   app.get('/api/clean-ips/discover', (req: Request, res: Response) => {
     const targetType = (req.query.type as string) || 'all';
 
-    const cleanDomainsList = [
-      { domain: 'icook.hk', city: 'Hong Kong (Clean SNI)' },
-      { domain: 'zyd.fr', city: 'Paris (Clean SNI)' },
-      { domain: 'speed.cloudflare.com', city: 'Global Cloudflare' },
-      { domain: 'dash.cloudflare.com', city: 'Cloudflare Core' },
-      { domain: 'pages.dev', city: 'Cloudflare Pages' },
-      { domain: 'workers.dev', city: 'Cloudflare Workers' },
-      { domain: 'cf-ipfs.com', city: 'IPFS Edge' },
-      { domain: 'trycloudflare.com', city: 'Cloudflare Tunnel' },
-      { domain: 'visa.com', city: 'Visa Edge CDN' },
-      { domain: 'time.is', city: 'Time.is Edge' },
-      { domain: 'udemy.com', city: 'Udemy CDN' },
-      { domain: 'subscene.com', city: 'Subscene CDN' },
-      { domain: 'cdn.jsdelivr.net', city: 'JsDelivr Edge' },
-      { domain: 'medium.com', city: 'Medium Edge CDN' },
-      { domain: 'zoom.us', city: 'Zoom Edge CDN' },
-      { domain: 'arvancloud.ir', city: 'Arvan Edge CDN' },
-      { domain: 'dl.google.com', city: 'Google CDN Edge' },
-      { domain: 'pixabay.com', city: 'Pixabay Edge CDN' },
+    const cleanDomainsBase = [
+      { domain: 'download.visualstudio.microsoft.com', city: 'Microsoft Edge CDN' },
+      { domain: 'dl.google.com', city: 'Google Edge CDN' },
       { domain: 'cdnjs.cloudflare.com', city: 'Cloudflare CDNJS' },
-      { domain: 'discord.com', city: 'Discord Edge CDN' },
-      { domain: 'gitlab.com', city: 'Gitlab Edge CDN' },
+      { domain: 'one.one.one.one', city: 'Cloudflare DNS Edge' },
+      { domain: 'cloudflare-dns.com', city: 'Cloudflare DNS' },
+      { domain: 'developers.cloudflare.com', city: 'Cloudflare Dev' },
+      { domain: 'community.cloudflare.com', city: 'Cloudflare Community' },
+      { domain: 'pixabay.com', city: 'Pixabay Edge CDN' },
       { domain: 'canva.com', city: 'Canva Edge CDN' },
       { domain: 'vimeo.com', city: 'Vimeo Edge CDN' },
+      { domain: 'gitlab.com', city: 'Gitlab Edge CDN' },
       { domain: 'docker.com', city: 'Docker Hub Edge' },
       { domain: 'python.org', city: 'Python Org Edge' },
       { domain: 'snapp.ir', city: 'Snapp CDN' },
       { domain: 'digikala.com', city: 'Digikala CDN' },
       { domain: 'hostinger.com', city: 'Hostinger Edge' },
-      { domain: 'digitalocean.com', city: 'DigitalOcean CDN' }
+      { domain: 'digitalocean.com', city: 'DigitalOcean CDN' },
+      { domain: 'arvancloud.ir', city: 'Arvan Edge CDN' },
+      { domain: 'skype.com', city: 'Skype Edge CDN' },
+      { domain: 'bing.com', city: 'Bing Edge CDN' },
+      { domain: 'spotify.com', city: 'Spotify Edge CDN' },
+      { domain: 'twitch.tv', city: 'Twitch Edge CDN' },
+      { domain: 'adobe.com', city: 'Adobe Edge CDN' },
+      { domain: 'behance.net', city: 'Behance Edge CDN' },
+      { domain: 'gateway.pinata.cloud', city: 'IPFS Pinata Gateway' },
+      { domain: 'dweb.link', city: 'IPFS DWeb Link' },
+      { domain: 'kaggle.com', city: 'Kaggle Edge CDN' },
+      { domain: 'huggingface.co', city: 'HuggingFace Edge' },
+      { domain: 'figma.com', city: 'Figma Edge CDN' },
+      { domain: 'notion.so', city: 'Notion Edge CDN' }
     ];
 
     const subnets = [
-      '104.16.', '104.17.', '104.18.', '104.19.', '104.21.',
-      '162.159.', '172.67.', '188.114.', '141.101.', '172.64.'
+      '104.16.', '104.17.', '104.18.', '104.19.', '104.20.', '104.21.', '104.22.', '104.23.',
+      '162.159.', '172.67.', '188.114.', '141.101.', '172.64.', '104.24.', '104.25.', '104.26.'
     ];
 
     const isps = ['Hamrah Avval (MCI)', 'Irancell (MTN)', 'Mokhaberat (TCI)', 'Shatel', 'Rightel'];
-    const cities = ['Tehran', 'Shiraz', 'Isfahan', 'Tabriz', 'Mashhad', 'Global Edge'];
+    const cities = ['Tehran', 'Shiraz', 'Isfahan', 'Tabriz', 'Mashhad', 'Ahvaz', 'Karaj', 'Global Edge'];
 
     const freshDiscovered: any[] = [];
     const count = parseInt(req.query.count as string) || 10;
 
-    if (targetType === 'domain') {
-      // Discover clean domains
-      const shuffled = [...cleanDomainsList].sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, count);
-      selected.forEach(item => {
-        freshDiscovered.push({
+    const generateDomainItem = () => {
+      // 50% pick from base, 50% generate dynamic Cloudflare subdomain
+      if (Math.random() > 0.4 && cleanDomainsBase.length > 0) {
+        const item = cleanDomainsBase[Math.floor(Math.random() * cleanDomainsBase.length)];
+        return {
           ip: item.domain,
           isp: 'Global Cloudflare CDN',
           city: item.city,
@@ -437,58 +437,58 @@ async function startServer() {
           status: 'idle',
           discovered: true,
           type: 'domain'
-        });
-      });
-    } else if (targetType === 'ip') {
-      // Discover clean IPs
-      for (let i = 0; i < count; i++) {
-        const prefix = subnets[Math.floor(Math.random() * subnets.length)];
-        const b3 = Math.floor(Math.random() * 250) + 1;
-        const b4 = Math.floor(Math.random() * 254) + 1;
-        const candidateIp = `${prefix}${b3}.${b4}`;
-
-        freshDiscovered.push({
-          ip: candidateIp,
-          isp: isps[Math.floor(Math.random() * isps.length)],
-          city: cities[Math.floor(Math.random() * cities.length)],
+        };
+      } else {
+        const subTypes = [
+          { prefix: `cdn-${Math.floor(Math.random() * 900 + 100)}`, domain: 'workers.dev', city: 'Cloudflare Worker Node' },
+          { prefix: `edge-${Math.floor(Math.random() * 900 + 100)}`, domain: 'pages.dev', city: 'Cloudflare Pages Edge' },
+          { prefix: `node-${Math.floor(Math.random() * 900 + 100)}`, domain: 'trycloudflare.com', city: 'Cloudflare Tunnel Node' },
+          { prefix: `hk-${Math.floor(Math.random() * 90 + 10)}`, domain: 'icook.hk', city: 'Hong Kong Clean SNI' },
+          { prefix: `fr-${Math.floor(Math.random() * 90 + 10)}`, domain: 'zyd.fr', city: 'Paris Clean SNI' }
+        ];
+        const chosen = subTypes[Math.floor(Math.random() * subTypes.length)];
+        return {
+          ip: `${chosen.prefix}.${chosen.domain}`,
+          isp: 'Global Cloudflare CDN',
+          city: chosen.city,
           pingMs: null,
           status: 'idle',
           discovered: true,
-          type: 'ip'
-        });
+          type: 'domain'
+        };
+      }
+    };
+
+    const generateIpItem = () => {
+      const prefix = subnets[Math.floor(Math.random() * subnets.length)];
+      const b3 = Math.floor(Math.random() * 250) + 1;
+      const b4 = Math.floor(Math.random() * 254) + 1;
+      return {
+        ip: `${prefix}${b3}.${b4}`,
+        isp: isps[Math.floor(Math.random() * isps.length)],
+        city: cities[Math.floor(Math.random() * cities.length)],
+        pingMs: null,
+        status: 'idle',
+        discovered: true,
+        type: 'ip'
+      };
+    };
+
+    if (targetType === 'domain') {
+      for (let i = 0; i < count; i++) {
+        freshDiscovered.push(generateDomainItem());
+      }
+    } else if (targetType === 'ip') {
+      for (let i = 0; i < count; i++) {
+        freshDiscovered.push(generateIpItem());
       }
     } else {
-      // Mixed IP & Domain discovery
-      const shuffledDomains = [...cleanDomainsList].sort(() => 0.5 - Math.random());
-      const selectedDomains = shuffledDomains.slice(0, Math.floor(count / 2));
-      selectedDomains.forEach(item => {
-        freshDiscovered.push({
-          ip: item.domain,
-          isp: 'Global Cloudflare CDN',
-          city: item.city,
-          pingMs: null,
-          status: 'idle',
-          discovered: true,
-          type: 'domain'
-        });
-      });
-
-      const ipCount = count - selectedDomains.length;
-      for (let i = 0; i < ipCount; i++) {
-        const prefix = subnets[Math.floor(Math.random() * subnets.length)];
-        const b3 = Math.floor(Math.random() * 250) + 1;
-        const b4 = Math.floor(Math.random() * 254) + 1;
-        const candidateIp = `${prefix}${b3}.${b4}`;
-
-        freshDiscovered.push({
-          ip: candidateIp,
-          isp: isps[Math.floor(Math.random() * isps.length)],
-          city: cities[Math.floor(Math.random() * cities.length)],
-          pingMs: null,
-          status: 'idle',
-          discovered: true,
-          type: 'ip'
-        });
+      const domCount = Math.floor(count / 2);
+      for (let i = 0; i < domCount; i++) {
+        freshDiscovered.push(generateDomainItem());
+      }
+      for (let i = 0; i < count - domCount; i++) {
+        freshDiscovered.push(generateIpItem());
       }
     }
 
@@ -498,6 +498,7 @@ async function startServer() {
     });
   });
 
+  // Single target TCP Ping using net.Socket (fast and accurate for IPs and Domains)
   app.post('/api/ping', async (req: Request, res: Response) => {
     const { targetHost, port } = req.body;
     const targetPort = Number(port) || 443;
@@ -508,10 +509,9 @@ async function startServer() {
 
     const cleanHost = targetHost.trim();
     const startTime = Date.now();
-    const isIp = /^[\d\.]+$/.test(cleanHost);
-
     let responded = false;
-    const sendResponse = (status: 'ok' | 'timeout', pingMs: number, errMessage?: string) => {
+
+    const finish = (status: 'ok' | 'timeout', pingMs: number, errMessage?: string) => {
       if (responded) return;
       responded = true;
       res.json({
@@ -522,66 +522,88 @@ async function startServer() {
       });
     };
 
-    const agent = isIp ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+    const socket = new net.Socket();
+    socket.setTimeout(2200);
 
-    const reqOpt = {
-      hostname: cleanHost,
-      port: targetPort,
-      path: '/cdn-cgi/trace',
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Host': cleanHost
-      },
-      timeout: 2200,
-      agent
-    };
+    socket.on('connect', () => {
+      const duration = Date.now() - startTime;
+      socket.destroy();
+      finish('ok', duration);
+    });
+
+    socket.on('timeout', () => {
+      socket.destroy();
+      finish('timeout', 3000, 'TCP Timeout');
+    });
+
+    socket.on('error', (err) => {
+      socket.destroy();
+      finish('timeout', 3000, err.message);
+    });
 
     try {
-      const request = https.request(reqOpt, (response) => {
-        response.resume(); // consume response data to free memory
-        const duration = Date.now() - startTime;
-        sendResponse('ok', duration);
-      });
-
-      request.on('error', () => {
-        // Fallback to HTTP on port 80
-        const httpOpt = {
-          hostname: cleanHost,
-          port: 80,
-          path: '/',
-          method: 'HEAD',
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          timeout: 2000
-        };
-
-        const httpReq = http.request(httpOpt, (httpRes) => {
-          httpRes.resume();
-          const duration = Date.now() - startTime;
-          sendResponse('ok', duration);
-        });
-
-        httpReq.on('error', (hErr) => {
-          sendResponse('timeout', 3000, hErr.message);
-        });
-
-        httpReq.on('timeout', () => {
-          httpReq.destroy();
-          sendResponse('timeout', 3000, 'HTTP Timeout');
-        });
-
-        httpReq.end();
-      });
-
-      request.on('timeout', () => {
-        request.destroy();
-        sendResponse('timeout', 3000, 'HTTPS Timeout');
-      });
-
-      request.end();
+      socket.connect(targetPort, cleanHost);
     } catch (err: any) {
-      sendResponse('timeout', 3000, err.message);
+      finish('timeout', 3000, err.message);
     }
+  });
+
+  // Batch TCP Ping endpoint for rapid scanner execution
+  app.post('/api/ping-batch', async (req: Request, res: Response) => {
+    const { targets } = req.body;
+    if (!Array.isArray(targets)) {
+      return res.status(400).json({ error: 'targets must be an array' });
+    }
+
+    const results = await Promise.all(
+      targets.map((targetHost: string) => {
+        return new Promise<{ targetHost: string; status: 'ok' | 'timeout'; pingMs: number }>((resolve) => {
+          if (!targetHost || typeof targetHost !== 'string') {
+            return resolve({ targetHost: '', status: 'timeout', pingMs: 3000 });
+          }
+          const cleanHost = targetHost.trim();
+          const startTime = Date.now();
+          let finished = false;
+
+          const done = (status: 'ok' | 'timeout', pingMs: number) => {
+            if (finished) return;
+            finished = true;
+            resolve({
+              targetHost: cleanHost,
+              status,
+              pingMs: status === 'ok' ? Math.max(15, pingMs) : 3000
+            });
+          };
+
+          const socket = new net.Socket();
+          socket.setTimeout(2200);
+
+          socket.on('connect', () => {
+            const duration = Date.now() - startTime;
+            socket.destroy();
+            done('ok', duration);
+          });
+
+          socket.on('timeout', () => {
+            socket.destroy();
+            done('timeout', 3000);
+          });
+
+          socket.on('error', () => {
+            socket.destroy();
+            done('timeout', 3000);
+          });
+
+          try {
+            socket.connect(443, cleanHost);
+          } catch (err) {
+            done('timeout', 3000);
+          }
+        });
+      })
+    );
+
+    res.json({ success: true, results });
   });
 
   // -------------------------------------------------------------------------

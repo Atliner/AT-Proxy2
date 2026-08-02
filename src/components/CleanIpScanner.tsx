@@ -60,13 +60,13 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       const resp = await fetch(`/api/clean-ips/discover?type=${targetType}&count=10`);
       const data = await resp.json();
       if (data.success && Array.isArray(data.discovered)) {
-        const existingSet = new Set(ipList.map((item) => item.ip.toLowerCase()));
+        const existingSet = new Set(ipList.map((item) => item.ip.toLowerCase().trim()));
         const newItems: CleanIpItem[] = data.discovered
-          .filter((item: any) => !existingSet.has(item.ip.toLowerCase()))
+          .filter((item: any) => item && item.ip && !existingSet.has(item.ip.toLowerCase().trim()))
           .map((item: any) => ({
-            ip: item.ip,
-            isp: item.isp,
-            city: item.city,
+            ip: item.ip.trim(),
+            isp: item.isp || 'Global CDN',
+            city: item.city || 'Discovered',
             pingMs: null,
             status: 'idle',
             type: item.type || (item.ip.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'ip' : 'domain'),
@@ -75,18 +75,17 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
         if (newItems.length > 0) {
           setIpList((prev) => [...newItems, ...prev]);
-          if (targetType === 'domain') setItemTypeFilter('domain');
-          if (targetType === 'ip') setItemTypeFilter('ip');
+          setItemTypeFilter('all');
           setPoolSyncStatus(
             isFa
-              ? `🔍 تعداد ${newItems.length} مورد جدید ${targetType === 'domain' ? 'دامنه تمیز' : 'آی‌پی'} کشف و به بالای لیست اضافه گردید!`
+              ? `🔍 تعداد ${newItems.length} مورد جدید ${targetType === 'domain' ? 'دامنه تمیز' : targetType === 'ip' ? 'آی‌پی' : 'آی‌پی و دامنه'} کشف و به بالای لیست اضافه گردید!`
               : `🔍 Discovered ${newItems.length} new ${targetType} endpoints added to top of list!`
           );
         } else {
           setPoolSyncStatus(
             isFa
-              ? `💡 تمام موارد کشف شده در این نوبت در لیست شما موجود بودند. می‌توانید دکمه اسکن زنده را بزنید.`
-              : `💡 All discovered items were already in your list.`
+              ? `💡 موارد قبلی همگی در لیست حضور داشتند. دکمه کشف را مجددا بفشارید.`
+              : `💡 All discovered items were already present. Try discovery again.`
           );
         }
       }
@@ -97,51 +96,9 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     }
   };
 
-  // Hybrid Client-Direct + Server-Proxy Ping Probe
+  // High-precision TCP Ping Probe
   const performPing = async (targetHost: string): Promise<{ isOk: boolean; pingMs: number }> => {
     const cleanHost = targetHost.trim();
-
-    // Strategy 1: Direct Client Browser Probe (measures user's real network latency)
-    const startTime = performance.now();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2200);
-
-    try {
-      const isIp = /^[\d\.]+$/.test(cleanHost);
-      const url = isIp ? `https://${cleanHost}/cdn-cgi/trace` : `https://${cleanHost}/`;
-
-      await fetch(url, {
-        method: 'GET',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      const pingMs = Math.round(performance.now() - startTime);
-      return { isOk: true, pingMs: Math.max(15, pingMs) };
-    } catch (e1) {
-      clearTimeout(timeoutId);
-    }
-
-    // Strategy 2: Direct HTTP Probe fallback (for IPs where HTTPS cert check fails in browser)
-    const httpController = new AbortController();
-    const httpTimeout = setTimeout(() => httpController.abort(), 2000);
-    const httpStart = performance.now();
-    try {
-      await fetch(`http://${cleanHost}/`, {
-        method: 'GET',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: httpController.signal,
-      });
-      clearTimeout(httpTimeout);
-      const pingMs = Math.round(performance.now() - httpStart);
-      return { isOk: true, pingMs: Math.max(15, pingMs) };
-    } catch (e2) {
-      clearTimeout(httpTimeout);
-    }
-
-    // Strategy 3: Server-side proxy ping fallback
     try {
       const resp = await fetch('/api/ping', {
         method: 'POST',
@@ -152,14 +109,13 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       if (data.status === 'ok' && data.pingMs < 3000) {
         return { isOk: true, pingMs: data.pingMs };
       }
-    } catch (e3) {
-      // Backend fallback failed
+    } catch (e) {
+      console.error('Ping error:', e);
     }
-
     return { isOk: false, pingMs: 3000 };
   };
 
-  // Run live TCP/HTTP ping scan across selected clean IPs in parallel batches & sync working ones to Community Pool
+  // Fast TCP batch ping scan across selected clean IPs & domains
   const handleScanAll = async () => {
     setScanning(true);
     setPoolSyncStatus(null);
@@ -170,34 +126,55 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     // Mark all items to scan as testing
     setIpList((prev) =>
       prev.map((item) =>
-        itemsToScan.some((t) => t.ip === item.ip) ? { ...item, status: 'testing' } : item
+        itemsToScan.some((t) => t.ip.toLowerCase() === item.ip.toLowerCase()) ? { ...item, status: 'testing' } : item
       )
     );
 
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = 10;
     for (let i = 0; i < itemsToScan.length; i += BATCH_SIZE) {
       const batch = itemsToScan.slice(i, i + BATCH_SIZE);
+      const targets = batch.map((item) => item.ip);
 
-      await Promise.all(
-        batch.map(async (item) => {
-          const res = await performPing(item.ip);
+      try {
+        const resp = await fetch('/api/ping-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targets }),
+        });
+        const data = await resp.json();
 
-          const updatedItem: CleanIpItem = {
-            ...item,
-            pingMs: res.isOk ? res.pingMs : 3000,
-            status: res.isOk ? 'ok' : 'fail',
-            lastChecked: new Date().toLocaleTimeString(),
-          };
+        if (data.success && Array.isArray(data.results)) {
+          const resultMap = new Map<string, { status: string; pingMs: number }>();
+          data.results.forEach((r: any) => {
+            if (r.targetHost) {
+              resultMap.set(r.targetHost.toLowerCase(), { status: r.status, pingMs: r.pingMs });
+            }
+          });
 
-          if (res.isOk && res.pingMs < 2500) {
-            workingFound.push(updatedItem);
-          }
+          batch.forEach((item) => {
+            const res = resultMap.get(item.ip.toLowerCase());
+            const isOk = res ? res.status === 'ok' : false;
+            const pingVal = res ? res.pingMs : 3000;
 
-          setIpList((prev) =>
-            prev.map((p) => (p.ip === item.ip ? updatedItem : p))
-          );
-        })
-      );
+            const updatedItem: CleanIpItem = {
+              ...item,
+              pingMs: isOk ? pingVal : 3000,
+              status: isOk ? 'ok' : 'fail',
+              lastChecked: new Date().toLocaleTimeString(),
+            };
+
+            if (isOk) {
+              workingFound.push(updatedItem);
+            }
+
+            setIpList((prev) =>
+              prev.map((p) => (p.ip.toLowerCase() === item.ip.toLowerCase() ? updatedItem : p))
+            );
+          });
+        }
+      } catch (err) {
+        console.error('Batch scan error:', err);
+      }
     }
 
     setScanning(false);
