@@ -205,6 +205,26 @@ async function getOrCreateKvDirect(apiToken: string, accountId: string, title: s
   return null;
 }
 
+// Helper: Fetch Cloudflare Workers Subdomain
+export async function getWorkersSubdomain(apiToken: string, accountId: string): Promise<string | null> {
+  try {
+    const res = await fetchCF(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await res.json();
+    if (data.success && data.result && data.result.subdomain) {
+      return data.result.subdomain;
+    }
+  } catch (err) {
+    console.warn('Could not fetch workers subdomain:', err);
+  }
+  return null;
+}
+
 // 3. Deploy Worker Script
 export async function deployCloudflareWorker(params: DeployWorkerParams): Promise<DeployWorkerResult> {
   const { apiToken, accountId, workerName, workerConfig, customDomain, zoneId, createKv = true } = params;
@@ -345,7 +365,9 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
       }
     }
 
-    const workerUrl = `https://${workerName}.${accountId.substring(0, 8)}.workers.dev`;
+    const userSubdomain = await getWorkersSubdomain(cleanToken, accountId);
+    const workerHostName = userSubdomain ? `${workerName}.${userSubdomain}.workers.dev` : `${workerName}.workers.dev`;
+    const workerUrl = `https://${workerHostName}`;
 
     return {
       success: true,

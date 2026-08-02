@@ -31,7 +31,9 @@ export function generateVlessUri(node: ProxyNode): string {
   params.set('security', security || 'tls');
   params.set('type', transport || 'ws');
   if (host) params.set('host', host);
-  if (sni) params.set('sni', sni);
+  const effectiveSni = sni || host || '';
+  if (effectiveSni) params.set('sni', effectiveSni);
+  params.set('fp', 'chrome');
   if (path) params.set('path', path);
 
   if (fragment && fragment.enabled) {

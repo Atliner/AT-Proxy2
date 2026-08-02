@@ -214,8 +214,9 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
       setDeployProgress(85);
       setDeployStatusText(isFa ? 'در حال فعال‌سازی زیردامنه و تولید لینک‌های اختصاصی...' : 'Enabling workers.dev route & sub links...');
 
-      // Build initial ProxyNode array
-      const domainHost = customDomain.trim() || `${targetWorkerName}.${accId.substring(0, 8)}.workers.dev`;
+      // Build initial ProxyNode array using returned worker host domain
+      const workerDomainFromRes = deployRes.workerUrl ? deployRes.workerUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '';
+      const domainHost = customDomain.trim() || workerDomainFromRes || `${targetWorkerName}.workers.dev`;
       const generatedNodes: ProxyNode[] = cleanIpsArr.map((cip, i) => ({
         id: `node-deploy-${i}`,
         name: `Nova-Edge-${i + 1}-${cip}`,

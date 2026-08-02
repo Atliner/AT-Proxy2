@@ -122,10 +122,17 @@ async function vlessOverWSHandler(request, uuidVal, defaultProxyIp) {
   const webSocketPair = new WebSocketPair();
   const [client, server] = Object.values(webSocketPair);
 
+  const earlyDataHeader = request.headers.get('Sec-WebSocket-Protocol') || '';
+  const responseHeaders = new Headers();
+  if (earlyDataHeader) {
+    responseHeaders.set('Sec-WebSocket-Protocol', earlyDataHeader);
+  }
+
   server.accept();
   let remoteSocketWrapper = { value: null };
+  let earlyDataBuffer = decodeBase64Url(earlyDataHeader);
 
-  const readableWebSocketStream = makeReadableWebSocketStream(server);
+  const readableWebSocketStream = makeReadableWebSocketStream(server, earlyDataBuffer);
 
   readableWebSocketStream.pipeTo(new WritableStream({
     async write(chunk) {
@@ -151,6 +158,7 @@ async function vlessOverWSHandler(request, uuidVal, defaultProxyIp) {
 
       const optLength = new Uint8Array(buffer.slice(17, 18))[0];
       const command = new Uint8Array(buffer.slice(18 + optLength, 19 + optLength))[0];
+      const isUdp = command === 2;
       const portBuffer = buffer.slice(19 + optLength, 21 + optLength);
       const port = new DataView(portBuffer).getUint16(0);
 
@@ -177,14 +185,29 @@ async function vlessOverWSHandler(request, uuidVal, defaultProxyIp) {
 
       server.send(new Uint8Array([version[0], 0]));
 
+      if (isUdp) {
+        if (port === 53) {
+          handleDohDns(rawClientData, server);
+        }
+        return;
+      }
+
       const targetHost = address || defaultProxyIp;
       const targetPort = port;
 
       try {
-        const tcpSocket = connect({
-          hostname: targetHost,
-          port: targetPort,
-        });
+        let tcpSocket;
+        try {
+          tcpSocket = connect({
+            hostname: targetHost,
+            port: targetPort,
+          });
+        } catch (e1) {
+          tcpSocket = connect({
+            hostname: defaultProxyIp,
+            port: targetPort,
+          });
+        }
 
         remoteSocketWrapper.value = tcpSocket;
 
@@ -207,7 +230,36 @@ async function vlessOverWSHandler(request, uuidVal, defaultProxyIp) {
   return new Response(null, {
     status: 101,
     webSocket: client,
+    headers: responseHeaders,
   });
+}
+
+async function handleDohDns(udpData, webSocket) {
+  try {
+    if (udpData.byteLength < 3) return;
+    const dnsLen = new DataView(udpData.slice(0, 2)).getUint16(0);
+    const dnsPayload = udpData.slice(2, 2 + dnsLen);
+
+    const dohResp = await fetch('https://1.1.1.1/dns-query', {
+      method: 'POST',
+      headers: { 'content-type': 'application/dns-message' },
+      body: dnsPayload,
+    });
+
+    if (dohResp.ok) {
+      const dohBuf = await dohResp.arrayBuffer();
+      const dohLen = dohBuf.byteLength;
+      const respBuffer = new Uint8Array(2 + dohLen);
+      new DataView(respBuffer.buffer).setUint16(0, dohLen);
+      respBuffer.set(new Uint8Array(dohBuf), 2);
+
+      if (webSocket.readyState === 1) {
+        webSocket.send(respBuffer);
+      }
+    }
+  } catch (err) {
+    console.error('DoH error:', err);
+  }
 }
 
 function remoteSocketToWS(remoteSocket, webSocket) {
@@ -226,9 +278,14 @@ function remoteSocketToWS(remoteSocket, webSocket) {
   })).catch(err => console.error('Remote to WS pipe error:', err));
 }
 
-function makeReadableWebSocketStream(webSocketServer) {
+function makeReadableWebSocketStream(webSocketServer, earlyDataBuffer) {
+  let earlyDataSent = false;
   return new ReadableStream({
     start(controller) {
+      if (earlyDataBuffer && earlyDataBuffer.byteLength > 0 && !earlyDataSent) {
+        controller.enqueue(earlyDataBuffer);
+        earlyDataSent = true;
+      }
       webSocketServer.addEventListener('message', (event) => {
         controller.enqueue(event.data);
       });
@@ -242,6 +299,22 @@ function makeReadableWebSocketStream(webSocketServer) {
   });
 }
 
+function decodeBase64Url(str) {
+  if (!str) return null;
+  try {
+    let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  } catch (e) {
+    return null;
+  }
+}
+
 function stringifyUuid(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -252,7 +325,7 @@ function handleSub(request, url, userUuid, cleanIps) {
 
   const nodes = cleanIps.map((cleanIp, index) => {
     const name = 'Nova-Edge-' + (index + 1) + '-' + cleanIp;
-    return 'vless://' + userUuid + '@' + cleanIp + ':443?encryption=none&security=tls&type=ws&host=' + host + '&path=%2Fvless-ws%3Fed%3D2048#' + encodeURIComponent(name);
+    return 'vless://' + userUuid + '@' + cleanIp + ':443?encryption=none&security=tls&type=ws&host=' + host + '&sni=' + host + '&fp=chrome&path=%2Fvless-ws%3Fed%3D2048#' + encodeURIComponent(name);
   });
 
   const rawSubContent = nodes.join('\\n');
