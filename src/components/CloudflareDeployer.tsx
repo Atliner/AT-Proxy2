@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Cloud, Key, CheckCircle2, AlertCircle, RefreshCw, Copy, ExternalLink, Zap, Lock, ShieldCheck, ArrowRight, Layers, Eye } from 'lucide-react';
-import { Language, CloudflareAccount, CloudflareZone, ProxyNode } from '../types';
+import { Language, CloudflareAccount, CloudflareZone, ProxyNode, WorkerScriptConfig } from '../types';
 import { generateRandomUuid } from '../utils/configParsers';
 import { POPULAR_PROXY_IPS } from '../data/cleanIps';
+import { verifyCloudflareToken, fetchCloudflareZones, deployCloudflareWorker } from '../utils/cloudflareClient';
 
 interface CloudflareDeployerProps {
   lang: Language;
@@ -51,14 +52,9 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
 
   const fetchZones = async (token: string, accId: string) => {
     try {
-      const resp = await fetch('/api/cloudflare/zones', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken: token, accountId: accId }),
-      });
-      const data = await resp.json();
-      if (data.result) {
-        setZones(data.result);
+      const res = await fetchCloudflareZones(token, accId);
+      if (res.success && res.result) {
+        setZones(res.result);
       }
     } catch (err) {
       console.error('Failed to fetch zones:', err);
@@ -77,22 +73,16 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
     setVerifySuccess(false);
 
     try {
-      const resp = await fetch('/api/cloudflare/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken: apiToken.trim() }),
-      });
+      const res = await verifyCloudflareToken(apiToken.trim());
 
-      const data = await resp.json();
-
-      if (!resp.ok || !data.success) {
-        throw new Error(data.error || 'Token validation failed.');
+      if (!res.success || !res.accounts || res.accounts.length === 0) {
+        throw new Error(res.error || (isFa ? 'توکن وارد شده معتبر نیست یا هیچ اکانتی ندارد.' : 'Token validation failed.'));
       }
 
-      setAccounts(data.accounts || []);
-      if (data.accounts && data.accounts.length > 0) {
-        setSelectedAccountId(data.accounts[0].id);
-        fetchZones(apiToken.trim(), data.accounts[0].id);
+      setAccounts(res.accounts);
+      if (res.accounts.length > 0) {
+        setSelectedAccountId(res.accounts[0].id);
+        fetchZones(apiToken.trim(), res.accounts[0].id);
       }
 
       setVerifySuccess(true);
@@ -158,17 +148,12 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
       setDeployProgress(5);
       setDeployStatusText(isFa ? 'در حال تایید توکن و استعلام حساب‌های کلاودفلر...' : 'Verifying Cloudflare API Token & accounts...');
       try {
-        const resp = await fetch('/api/cloudflare/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiToken: apiToken.trim() }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.accounts || data.accounts.length === 0) {
-          throw new Error(data.error || (isFa ? 'توکن وارد شده معتبر نیست یا هیچ اکانتی ندارد.' : 'Invalid API Token or no accounts found.'));
+        const res = await verifyCloudflareToken(apiToken.trim());
+        if (!res.success || !res.accounts || res.accounts.length === 0) {
+          throw new Error(res.error || (isFa ? 'توکن وارد شده معتبر نیست یا هیچ اکانتی ندارد.' : 'Invalid API Token or no accounts found.'));
         }
-        setAccounts(data.accounts);
-        accId = data.accounts[0].id;
+        setAccounts(res.accounts);
+        accId = res.accounts[0].id;
         setSelectedAccountId(accId);
         setVerifySuccess(true);
         setCfConnected(true);
@@ -192,11 +177,12 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const workerConfig = {
+    const subPathStr = `/sub-${uuid.substring(0, 6)}`;
+    const workerConfig: WorkerScriptConfig = {
       uuid,
       proxyIPs: [proxyIp],
       cleanIPs: cleanIpsArr,
-      subPath: `/sub-${uuid.substring(0, 6)}`,
+      subPath: subPathStr,
       subTitle: `Nova Edge Node - ${targetWorkerName}`,
       enableFragment: true,
       fragmentLength: '10-20',
@@ -204,30 +190,25 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
       enableVless: true,
       enableVmess: true,
       enableTrojan: false,
-      zoneId: selectedZoneId || undefined,
+      customSNIs: ['speedtest.net', 'zula.ir'],
     };
 
     try {
       setDeployProgress(45);
       setDeployStatusText(isFa ? 'در حال ایجاد دیتابیس KV و ارسال کد به Cloudflare Edge...' : 'Deploying code & provisioning KV namespace on Cloudflare Edge...');
 
-      const resp = await fetch('/api/cloudflare/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiToken: apiToken.trim(),
-          accountId: accId,
-          workerName: targetWorkerName,
-          customDomain: customDomain.trim() || undefined,
-          createKv: autoCreateKv,
-          workerConfig,
-        }),
+      const deployRes = await deployCloudflareWorker({
+        apiToken: apiToken.trim(),
+        accountId: accId,
+        workerName: targetWorkerName,
+        customDomain: customDomain.trim() || undefined,
+        zoneId: selectedZoneId || undefined,
+        createKv: autoCreateKv,
+        workerConfig,
       });
 
-      const data = await resp.json();
-
-      if (!resp.ok || !data.success) {
-        throw new Error(data.error || 'Deployment failed.');
+      if (!deployRes.success || !deployRes.workerUrl) {
+        throw new Error(deployRes.error || 'Deployment failed.');
       }
 
       setDeployProgress(85);
@@ -257,29 +238,39 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
         },
       }));
 
-      // Create subscription payload on backend
-      const subResp = await fetch('/api/sub/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: uuid.substring(0, 8),
-          title: `Nova Sub - ${targetWorkerName}`,
-          nodes: generatedNodes,
-        }),
-      });
-      const subData = await subResp.json();
+      // Create subscription payload on backend (if server exists) or fallback to worker direct sub URL
+      let finalSubUrl = `${deployRes.workerUrl}${subPathStr}`;
+      try {
+        const subResp = await fetch('/api/sub/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: uuid.substring(0, 8),
+            title: `Nova Sub - ${targetWorkerName}`,
+            nodes: generatedNodes,
+          }),
+        });
+        const contentType = subResp.headers.get('content-type') || '';
+        if (subResp.ok && contentType.includes('application/json')) {
+          const subData = await subResp.json();
+          if (subData.subUrl) {
+            finalSubUrl = `${window.location.origin}${subData.subUrl}`;
+          }
+        }
+      } catch (e) {
+        console.warn('Backend sub creation notice, using worker direct sub URL:', e);
+      }
 
       setDeployProgress(100);
-      const subUrl = subData.subUrl ? `${window.location.origin}${subData.subUrl}` : `${data.workerUrl}/sub`;
 
       setDeployedResult({
-        workerUrl: data.workerUrl,
-        subUrl,
-        customDomainUrl: data.customDomainUrl,
+        workerUrl: deployRes.workerUrl,
+        subUrl: finalSubUrl,
+        customDomainUrl: deployRes.customDomainUrl,
       });
 
       setActiveWorkerName(targetWorkerName);
-      onDeploySuccess(data.workerUrl, subUrl, generatedNodes);
+      onDeploySuccess(deployRes.workerUrl, finalSubUrl, generatedNodes);
 
     } catch (err: any) {
       setDeployError(err.message || 'Deployment error');
