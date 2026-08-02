@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, RefreshCw, CheckCircle2, Plus, Zap, Filter, ShieldCheck, ArrowUpRight, Globe, Sparkles, Database, Send, Radio } from 'lucide-react';
+import { Network, RefreshCw, CheckCircle2, Plus, Zap, Filter, ShieldCheck, ArrowUpRight, Globe, Sparkles, Database, Send, Radio, Trash2 } from 'lucide-react';
 import { Language, CleanIpItem } from '../types';
 import { INITIAL_CLEAN_IPS, ISP_PRESETS } from '../data/cleanIps';
 
@@ -452,6 +452,42 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
           : `Added ${ipsToApply.length} clean endpoints to worker node configurations!`
       );
     }
+  };
+
+  const handleRemoveFailedItems = () => {
+    const beforeCount = ipList.length;
+    const cleaned = ipList.filter(
+      (item) => item.status !== 'fail' && (item.pingMs === null || (item.pingMs !== undefined && item.pingMs < 2500))
+    );
+    const removedCount = beforeCount - cleaned.length;
+    setIpList(cleaned);
+    setPoolSyncStatus(
+      isFa
+        ? `🧹 تعداد ${removedCount} مورد بدون پاسخ و تایم‌اوت با موفقیت از اسکنر حذف گردید!`
+        : `🧹 Removed ${removedCount} failed/timed-out items from scanner list!`
+    );
+  };
+
+  const handleRemoveSingleItem = (targetIp: string) => {
+    setIpList((prev) => prev.filter((item) => item.ip !== targetIp));
+  };
+
+  const handleRemoveFailedPoolItems = () => {
+    const beforeCount = communityPool.length;
+    const cleaned = communityPool.filter(
+      (item) => item.status !== 'fail' && (item.pingMs === null || (item.pingMs !== undefined && item.pingMs < 2500))
+    );
+    const removedCount = beforeCount - cleaned.length;
+    setCommunityPool(cleaned);
+    setPoolSyncStatus(
+      isFa
+        ? `🧹 تعداد ${removedCount} مورد بدون پاسخ و غیرفعال با موفقیت از استخر حذف گردید!`
+        : `🧹 Removed ${removedCount} failed items from community pool!`
+    );
+  };
+
+  const handleRemoveSinglePoolItem = (targetIp: string) => {
+    setCommunityPool((prev) => prev.filter((item) => item.ip !== targetIp));
   };
 
   const filteredList = ipList.filter((item) => {

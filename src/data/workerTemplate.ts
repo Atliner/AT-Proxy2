@@ -102,7 +102,7 @@ export default {
         }
       }
 
-      if (url.pathname === DEFAULT_SUB_PATH || url.pathname === '/sub' || url.pathname === '/' + currentUuid) {
+      if (url.pathname === DEFAULT_SUB_PATH || url.pathname.startsWith('/sub') || url.pathname.startsWith('/api/sub') || url.pathname === '/' + currentUuid) {
         return handleSub(request, url, currentUuid, currentCleanIps);
       }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Plus, Copy, QrCode, Trash2, Check, RefreshCw, Layers, Shield, Settings2, Sparkles, Filter } from 'lucide-react';
+import { Zap, Plus, Copy, QrCode, Trash2, Check, RefreshCw, Layers, Shield, Settings2, Sparkles, Filter, Database, Globe } from 'lucide-react';
 import { Language, ProxyNode, FragmentConfig } from '../types';
 import { generateVlessUri, generateVmessUri, generateTrojanUri, generateNodeUri, generateRandomUuid, generateMultiNodesBatch } from '../utils/configParsers';
 import { INITIAL_CLEAN_IPS, POPULAR_PROXY_IPS, CF_HTTPS_PORTS, CF_HTTP_PORTS } from '../data/cleanIps';
@@ -41,6 +41,8 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [loadingPoolGen, setLoadingPoolGen] = useState(false);
+  const [poolGenMessage, setPoolGenMessage] = useState<string | null>(null);
 
   // Apply ISP fragment preset
   const handleApplyPreset = (preset: 'mci' | 'irancell' | 'mokhaberat' | 'shatel' | 'custom') => {
@@ -105,6 +107,122 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
       [443, 2053, 2087, 8880]
     );
     setNodes((prev) => [...batch, ...prev]);
+    setPoolGenMessage(
+      isFa
+        ? '⚡ تعداد ۲۰ کانفیگ جدید بر اساس آی‌پی‌های تمیز اولیه تولید و به لیست اضافه شد!'
+        : '⚡ 20 configs generated from standard clean IPs!'
+    );
+  };
+
+  const handleGenerateFromPool = async () => {
+    setLoadingPoolGen(true);
+    setPoolGenMessage(null);
+
+    let poolItems: { ip: string; isp?: string; type?: string }[] = [];
+    try {
+      const resp = await fetch('/api/clean-ips/pool');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && Array.isArray(data.pool) && data.pool.length > 0) {
+          poolItems = data.pool;
+        }
+      }
+    } catch (e) {
+      // Ignore API errors
+    }
+
+    if (poolItems.length === 0) {
+      poolItems = [
+        { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', type: 'ip' },
+        { ip: 'icook.hk', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: '104.19.241.93', isp: 'Irancell (MTN)', type: 'ip' },
+        { ip: 'zyd.fr', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: '162.159.137.85', isp: 'Mokhaberat (TCI)', type: 'ip' },
+        { ip: 'speed.cloudflare.com', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: '172.67.182.201', isp: 'Hamrah Avval (MCI)', type: 'ip' },
+        { ip: 'visa.com', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: '104.16.12.56', isp: 'Mokhaberat (TCI)', type: 'ip' },
+        { ip: '172.67.74.155', isp: 'Irancell (MTN)', type: 'ip' },
+        { ip: '104.20.10.1', isp: 'Shatel', type: 'ip' },
+        { ip: '104.18.2.10', isp: 'Rightel', type: 'ip' },
+        { ip: 'cloudflare.com', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: 'time.is', isp: 'Global Cloudflare CDN', type: 'domain' },
+        { ip: '104.16.20.10', isp: 'Shatel', type: 'ip' },
+        { ip: '104.17.147.22', isp: 'Irancell (MTN)', type: 'ip' },
+        { ip: '162.159.138.85', isp: 'Mokhaberat (TCI)', type: 'ip' },
+        { ip: '104.16.100.1', isp: 'Hamrah Avval (MCI)', type: 'ip' },
+        { ip: '104.19.100.1', isp: 'Irancell (MTN)', type: 'ip' },
+        { ip: '172.67.200.1', isp: 'Mokhaberat (TCI)', type: 'ip' },
+      ];
+    }
+
+    const currentWorkerHost = host.trim() || 'my-worker.account.workers.dev';
+    const currentUuid = uuid.trim() || generateRandomUuid();
+
+    const createdNodes: ProxyNode[] = poolItems.map((item, index) => {
+      const isDomain = item.type === 'domain' || !item.ip.match(/^\d+\.\d+\.\d+\.\d+$/);
+      const itemIsp = item.isp || (isDomain ? 'Clean SNI' : 'Clean IP');
+
+      let fragPreset: 'mci' | 'irancell' | 'mokhaberat' | 'shatel' | 'custom' = 'mci';
+      let fLen = '10-20';
+      let fInt = '10-20';
+      let fPackets = 'tlshello';
+
+      const ispLower = itemIsp.toLowerCase();
+      if (ispLower.includes('irancell') || ispLower.includes('mtn')) {
+        fragPreset = 'irancell';
+        fLen = '100-200';
+        fInt = '5-10';
+        fPackets = '1-3';
+      } else if (ispLower.includes('mokhaberat') || ispLower.includes('tci')) {
+        fragPreset = 'mokhaberat';
+        fLen = '20-50';
+        fInt = '15-30';
+        fPackets = 'tlshello';
+      } else if (ispLower.includes('shatel')) {
+        fragPreset = 'shatel';
+        fLen = '5-15';
+        fInt = '10-15';
+        fPackets = '1-2';
+      }
+
+      const testPorts = [443, 2053, 2087, 8443, 2083, 2096];
+      const selectedPort = testPorts[index % testPorts.length];
+
+      return {
+        id: `pool-node-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+        name: isDomain
+          ? `Nova-SNI-${item.ip}-P${selectedPort}`
+          : `Nova-${itemIsp.split(' ')[0]}-${item.ip}-P${selectedPort}`,
+        protocol: 'vless',
+        address: item.ip,
+        port: selectedPort,
+        uuid: currentUuid,
+        path: '/vless-ws?ed=2048',
+        host: currentWorkerHost,
+        sni: isDomain ? item.ip : currentWorkerHost,
+        tls: true,
+        security: 'tls',
+        transport: 'ws',
+        proxyIp: proxyIp,
+        ispTag: itemIsp,
+        fragment: {
+          enabled: true,
+          length: fLen,
+          interval: fInt,
+          packets: fPackets,
+          preset: fragPreset,
+        },
+      };
+    });
+
+    setNodes((prev) => [...createdNodes, ...prev]);
+    setLoadingPoolGen(false);
+    setPoolGenMessage(
+      isFa
+        ? `🌊 تعداد ${createdNodes.length} کانفیگ هوشمند بر اساس تمام آی‌پی‌ها و دامنه‌های استخر همگانی تولید و به لیست اضافه گردید!`
+        : `🌊 Created ${createdNodes.length} configs from all pool IPs/Domains and appended to subscription!`
+    );
   };
 
   const handleCopyLink = (node: ProxyNode) => {
@@ -148,24 +266,55 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Batch Generator Actions */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#0d0d0f] border border-white/10 p-6 rounded-3xl">
-        <div>
-          <h3 className="text-lg font-light text-white flex items-center space-x-2 space-x-reverse">
-            <Zap className="w-5 h-5 text-blue-400" />
-            <span>{isFa ? 'سازنده کانفیگ VLESS / VMESS و فرگمنت پیشرفته' : 'VLESS / VMESS Config Generator'}</span>
-          </h3>
-          <p className="text-xs text-white/40 mt-1">
-            {isFa ? 'ایجاد کانفیگ‌های تک‌نود یا تولید دسته‌ای برای همراه اول، ایرانسل و مخابرات' : 'Create optimized single nodes or batch generate for all ISPs'}
-          </p>
+      <div className="bg-[#0d0d0f] border border-white/10 p-6 rounded-3xl space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-light text-white flex items-center space-x-2 space-x-reverse">
+              <Zap className="w-5 h-5 text-blue-400" />
+              <span>{isFa ? 'سازنده کانفیگ VLESS / VMESS و فرگمنت پیشرفته' : 'VLESS / VMESS Config Generator'}</span>
+            </h3>
+            <p className="text-xs text-white/40 mt-1">
+              {isFa
+                ? 'ایجاد کانفیگ‌های تک‌نود یا ساخت خودکار از آی‌پی‌ها و دامنه‌های استخر همگانی برای تمام اپراتورها'
+                : 'Create single nodes or generate automatically from Community Pool IPs/Domains'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleGenerateFromPool}
+              disabled={loadingPoolGen}
+              className="py-3 px-5 border border-cyan-500/50 bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/40 hover:to-blue-600/40 text-cyan-300 font-bold text-xs rounded-2xl transition flex items-center space-x-2 space-x-reverse whitespace-nowrap shadow-lg shadow-cyan-600/10 disabled:opacity-50"
+            >
+              <Database className={`w-4 h-4 text-cyan-400 ${loadingPoolGen ? 'animate-spin' : ''}`} />
+              <span>
+                {loadingPoolGen
+                  ? (isFa ? 'در حال دریافت و ساخت...' : 'Generating...')
+                  : (isFa ? '🌊 ساخت کانفیگ از موارد موجود در استخر (۲۰+ مورد)' : 'Generate Configs from Pool')}
+              </span>
+            </button>
+
+            <button
+              onClick={handleGenerateBatch}
+              className="py-3 px-5 border border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-bold text-xs uppercase tracking-widest rounded-2xl transition flex items-center space-x-2 space-x-reverse whitespace-nowrap"
+            >
+              <Layers className="w-4 h-4" />
+              <span>{isFa ? '⚡ تولید دسته‌ای ۲۰ کانفیگ پیش‌فرض' : 'Batch Generate 20+ Default Nodes'}</span>
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={handleGenerateBatch}
-          className="py-3 px-5 border border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-bold text-xs uppercase tracking-widest rounded-2xl transition flex items-center space-x-2 space-x-reverse whitespace-nowrap"
-        >
-          <Layers className="w-4 h-4" />
-          <span>{isFa ? '⚡ تولید دسته‌ای ۲۰ کانفیگ برای تمام اپراتورها' : 'Batch Generate 20+ ISP Nodes'}</span>
-        </button>
+        {poolGenMessage && (
+          <div className="p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl text-cyan-300 text-xs font-medium flex items-center justify-between animate-in fade-in">
+            <span>{poolGenMessage}</span>
+            <button
+              onClick={() => setPoolGenMessage(null)}
+              className="text-[10px] text-cyan-400 hover:text-cyan-200 underline font-mono"
+            >
+              {isFa ? 'بستن' : 'Dismiss'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
