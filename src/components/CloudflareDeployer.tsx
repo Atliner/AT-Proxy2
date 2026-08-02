@@ -431,25 +431,58 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
 
           <div className="space-y-4">
             {/* Direct Token Creator Button */}
-            <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-2">
-              <span className="text-xs font-semibold text-blue-300 block">
-                {isFa ? '🔑 دریافت سریع توکن API آماده' : '🔑 Quick Cloudflare Token Creator'}
-              </span>
-              <a
-                href="https://dash.cloudflare.com/profile/api-tokens?template=workers_scripts"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono text-xs rounded-xl transition flex items-center justify-center space-x-2 space-x-reverse shadow-lg shadow-blue-600/20 border border-blue-400/30 font-bold"
-              >
-                <Key className="w-4 h-4" />
-                <span>{isFa ? 'دریافت مستقیم توکن از کلاودفلر (ساخت اتوماتیک)' : 'Create Cloudflare Token (1-Click)'}</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-              <p className="text-[10px] text-white/60 leading-relaxed">
-                {isFa
-                  ? '⚡ با کلیک روی دکمه بالا، فرم دسترسی‌های لازم (Edit Cloudflare Workers) خودکار در کلاودفلر آماده می‌شود؛ فقط روی Create Token کلیک کرده و کد را کپی کنید.'
-                  : 'Click above to open pre-configured Cloudflare token template. Just click Create Token and paste here.'}
-              </p>
+            <div className="p-4 bg-gradient-to-br from-blue-900/30 via-indigo-900/20 to-black border border-blue-500/30 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-blue-300 flex items-center space-x-1.5 space-x-reverse">
+                  <Key className="w-4 h-4 text-blue-400" />
+                  <span>{isFa ? '🔑 ساخت مستقیم توکن API در کلاودفلر' : '🔑 Direct Cloudflare Token Creator'}</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 text-[10px] border border-blue-500/20">
+                  {isFa ? 'دستورالعمل ۱ کلیکی' : '1-Click Guided'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a
+                  href="https://dash.cloudflare.com/profile/api-tokens/create?template=workers_scripts"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono text-xs rounded-xl transition flex items-center justify-center space-x-1.5 space-x-reverse shadow-lg shadow-blue-600/20 border border-blue-400/30 font-bold"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>{isFa ? '۱. ساخت توکن با قالب Workers' : '1. Open Workers Template'}</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+
+                <a
+                  href="https://dash.cloudflare.com/profile/api-tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 bg-white/5 hover:bg-white/10 text-white/80 font-mono text-xs rounded-xl transition flex items-center justify-center space-x-1.5 space-x-reverse border border-white/15"
+                >
+                  <span>{isFa ? 'لیست تمام توکن‌های من' : 'My Tokens List'}</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-white/40" />
+                </a>
+              </div>
+
+              {/* Step-by-Step Helper */}
+              <div className="bg-black/40 border border-white/5 rounded-xl p-3 text-[11px] text-white/70 space-y-1.5 leading-relaxed">
+                <div className="font-semibold text-blue-300 text-[11px] mb-1">
+                  {isFa ? '📌 راهنمای ۳ ثانیه‌ای ساخت توکن:' : '📌 3-Step Token Creation Guide:'}
+                </div>
+                <div className="flex items-start space-x-1.5 space-x-reverse">
+                  <span className="text-blue-400 font-bold">۱.</span>
+                  <span>{isFa ? 'روی دکمه بالای صفحه کلاودفلر (دکمه آبی Use template در مقابل Edit Cloudflare Workers) کلیک کنید.' : 'Click "Use template" next to "Edit Cloudflare Workers".'}</span>
+                </div>
+                <div className="flex items-start space-x-1.5 space-x-reverse">
+                  <span className="text-blue-400 font-bold">۲.</span>
+                  <span>{isFa ? 'در انتهای صفحه باز شده روی دکمه آبی Continue to summary کلیک کنید.' : 'Scroll to bottom and click "Continue to summary".'}</span>
+                </div>
+                <div className="flex items-start space-x-1.5 space-x-reverse">
+                  <span className="text-blue-400 font-bold">۳.</span>
+                  <span>{isFa ? 'روی Create Token کلیک کرده و کد عجیب نمایش داده شده را در کادر زیر کپی کنید.' : 'Click "Create Token" and copy the token string into input below.'}</span>
+                </div>
+              </div>
             </div>
 
             <div>

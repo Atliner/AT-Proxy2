@@ -28,13 +28,13 @@ export const Header: React.FC<HeaderProps> = ({
   const isFa = lang === 'fa';
 
   const navItems = [
-    { id: 'deploy', icon: Cloud, labelFa: 'تنظیمات استقرار و توکن', labelEn: 'Deploy & Token' },
-    { id: 'generator', icon: Zap, labelFa: 'سازنده کانفیگ VLESS/VMESS', labelEn: 'Config Builder' },
-    { id: 'sub', icon: QrCode, labelFa: 'لینک اشتراک و خروجی', labelEn: 'Subscriptions' },
-    { id: 'clean-ip', icon: Network, labelFa: 'اسکنر آی‌پی تمیز', labelEn: 'Clean IP Scanner' },
-    { id: 'decoder', icon: Code2, labelFa: 'دیکودر و تزریق فرگمنت', labelEn: 'Link Decoder' },
+    { id: 'deploy', icon: Cloud, labelFa: 'استقرار و توکن', labelEn: 'Deploy & Token' },
+    { id: 'generator', icon: Zap, labelFa: 'سازنده کانفیگ', labelEn: 'Config Builder' },
+    { id: 'sub', icon: QrCode, labelFa: 'لینک اشتراک', labelEn: 'Subscriptions' },
+    { id: 'clean-ip', icon: Network, labelFa: 'آی‌پی تمیز', labelEn: 'Clean IP Scanner' },
+    { id: 'decoder', icon: Code2, labelFa: 'دیکودر و فرگمنت', labelEn: 'Link Decoder' },
     { id: 'editor', icon: Cpu, labelFa: 'کد وورکر', labelEn: 'Worker Code' },
-    { id: 'ai', icon: Sparkles, labelFa: 'دستیار هوشمند (AI)', labelEn: 'AI Copilot' },
+    { id: 'ai', icon: Sparkles, labelFa: 'دستیار AI', labelEn: 'AI Copilot' },
   ];
 
   return (
@@ -105,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Tab Navigation - Only unlocked when panel is deployed */}
         {isDeployed && (
-          <div className="flex overflow-x-auto no-scrollbar border-t border-white/10 py-2 gap-1.5 animate-in fade-in duration-300">
+          <div className="flex flex-wrap md:flex-nowrap items-center justify-between border-t border-white/10 py-2 gap-1 animate-in fade-in duration-300">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -113,14 +113,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 space-x-reverse px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm whitespace-nowrap transition-all border ${
+                  className={`flex-1 min-w-[110px] md:min-w-0 flex items-center justify-center space-x-1.5 space-x-reverse px-2.5 sm:px-3 py-2 rounded-xl font-semibold text-xs transition-all border ${
                     isActive
-                      ? 'bg-white/10 border-white/20 text-white shadow-sm'
-                      : 'border-transparent text-white/50 hover:text-white hover:bg-white/5'
+                      ? 'bg-gradient-to-r from-blue-600/30 to-cyan-600/30 border-cyan-500/40 text-cyan-200 shadow-md shadow-cyan-900/20'
+                      : 'border-transparent text-white/60 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-blue-400' : 'text-white/40'}`} />
-                  <span>{isFa ? item.labelFa : item.labelEn}</span>
+                  <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-cyan-300' : 'text-white/40'}`} />
+                  <span className="truncate">{isFa ? item.labelFa : item.labelEn}</span>
                 </button>
               );
             })}

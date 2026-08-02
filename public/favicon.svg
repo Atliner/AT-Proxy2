@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#06b6d4" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background Shield Container -->
+  <rect width="512" height="512" rx="128" fill="#090d16"/>
+  
+  <!-- Outer glowing border -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="url(#grad)" stroke-width="8" opacity="0.6"/>
+
+  <!-- Shield Shape -->
+  <path d="M256 72 L384 128 V248 C384 340 324 408 256 440 C188 408 128 340 128 248 V128 Z" 
+        fill="url(#grad)" 
+        filter="url(#shadow)" />
+
+  <!-- Inner Edge Node Graphic / Lightning Sparkle -->
+  <path d="M272 160 L192 272 H256 L240 352 L320 240 H256 Z" 
+        fill="#ffffff" 
+        stroke="url(#glow)" 
+        stroke-width="4" 
+        stroke-linejoin="round"/>
+        
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.15" stroke-dasharray="8 8"/>
+</svg>
