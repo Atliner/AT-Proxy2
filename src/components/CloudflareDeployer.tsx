@@ -49,6 +49,22 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
   const [autoCreateKv, setAutoCreateKv] = useState(true);
   const [existingWorkerUrl, setExistingWorkerUrl] = useState('');
   const [activeTabMode, setActiveTabMode] = useState<'new_deploy' | 'existing_link'>('new_deploy');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  React.useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem('nova_cf_token');
+      if (savedToken) {
+        setApiToken(savedToken);
+      }
+      const savedWorkerUrl = localStorage.getItem('nova_cf_worker_url');
+      if (savedWorkerUrl) {
+        setExistingWorkerUrl(savedWorkerUrl);
+      }
+    } catch (e) {
+      console.error('Error reading localStorage in CloudflareDeployer', e);
+    }
+  }, []);
 
   const fetchZones = async (token: string, accId: string) => {
     try {
@@ -87,6 +103,11 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
 
       setVerifySuccess(true);
       setCfConnected(true);
+      try {
+        localStorage.setItem('nova_cf_token', apiToken.trim());
+      } catch (e) {
+        console.error(e);
+      }
     } catch (err: any) {
       setVerifyError(err.message || 'Error connecting to Cloudflare API');
       setCfConnected(false);
@@ -128,6 +149,15 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
 
     setCfConnected(true);
     setActiveWorkerName(domainHost);
+    try {
+      localStorage.setItem('nova_cf_is_deployed', 'true');
+      localStorage.setItem('nova_cf_worker_url', formattedUrl);
+      localStorage.setItem('nova_cf_sub_url', subUrl);
+      localStorage.setItem('nova_cf_worker_name', domainHost);
+      localStorage.setItem('nova_cf_nodes', JSON.stringify(initialNodes));
+    } catch (e) {
+      console.error('Failed to save session to localStorage', e);
+    }
     onDeploySuccess(formattedUrl, subUrl, initialNodes);
   };
 
@@ -271,6 +301,18 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
       });
 
       setActiveWorkerName(targetWorkerName);
+
+      try {
+        localStorage.setItem('nova_cf_token', apiToken.trim());
+        localStorage.setItem('nova_cf_is_deployed', 'true');
+        localStorage.setItem('nova_cf_worker_url', deployRes.workerUrl);
+        localStorage.setItem('nova_cf_sub_url', finalSubUrl);
+        localStorage.setItem('nova_cf_worker_name', targetWorkerName);
+        localStorage.setItem('nova_cf_nodes', JSON.stringify(generatedNodes));
+      } catch (e) {
+        console.error('Failed to save deploy session to localStorage', e);
+      }
+
       onDeploySuccess(deployRes.workerUrl, finalSubUrl, generatedNodes);
 
     } catch (err: any) {
@@ -391,20 +433,22 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
             {/* Direct Token Creator Button */}
             <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-2">
               <span className="text-xs font-semibold text-blue-300 block">
-                {isFa ? '🔑 هنوز توکن کلودفلر ندارید؟' : '🔑 Don\'t have a Cloudflare Token yet?'}
+                {isFa ? '🔑 دریافت سریع توکن API آماده' : '🔑 Quick Cloudflare Token Creator'}
               </span>
               <a
-                href="https://dash.cloudflare.com/profile/api-tokens"
+                href="https://dash.cloudflare.com/profile/api-tokens?template=workers_scripts"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs rounded-xl transition flex items-center justify-center space-x-2 space-x-reverse shadow-lg shadow-blue-600/20 border border-blue-400/30 font-bold"
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono text-xs rounded-xl transition flex items-center justify-center space-x-2 space-x-reverse shadow-lg shadow-blue-600/20 border border-blue-400/30 font-bold"
               >
                 <Key className="w-4 h-4" />
-                <span>{isFa ? 'دریافت مستقیم توکن از کلودفلر (۱ کلیک)' : 'Get Token from Cloudflare (1-Click)'}</span>
+                <span>{isFa ? 'دریافت مستقیم توکن از کلاودفلر (ساخت اتوماتیک)' : 'Create Cloudflare Token (1-Click)'}</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
-              <p className="text-[10px] text-white/50 leading-relaxed">
-                {isFa ? 'الگوی Edit Cloudflare Workers را انتخاب کنید و توکن را در کادر زیر قرار دهید.' : 'Select Edit Cloudflare Workers template and copy token here.'}
+              <p className="text-[10px] text-white/60 leading-relaxed">
+                {isFa
+                  ? '⚡ با کلیک روی دکمه بالا، فرم دسترسی‌های لازم (Edit Cloudflare Workers) خودکار در کلاودفلر آماده می‌شود؛ فقط روی Create Token کلیک کرده و کد را کپی کنید.'
+                  : 'Click above to open pre-configured Cloudflare token template. Just click Create Token and paste here.'}
               </p>
             </div>
 
@@ -529,98 +573,139 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-white/80 mb-1">
-                {isFa ? 'نام وورکر (Worker Name):' : 'Worker Name:'}
-              </label>
-              <input
-                type="text"
-                value={workerName}
-                onChange={(e) => setWorkerName(e.target.value)}
-                className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-white/80 mb-1 flex items-center justify-between">
-                <span>{isFa ? 'شناسه UUID اختصاصی:' : 'VLESS UUID:'}</span>
-                <button
-                  onClick={() => setUuid(generateRandomUuid())}
-                  className="text-[11px] text-blue-400 hover:underline"
-                >
-                  {isFa ? 'تولید جدید' : 'Generate'}
-                </button>
-              </label>
-              <input
-                type="text"
-                value={uuid}
-                onChange={(e) => setUuid(e.target.value)}
-                className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-white/80 mb-1">
-                {isFa ? 'آی‌پی ریورس پروکسی (Proxy IP):' : 'Outbound Proxy IP:'}
-              </label>
-              <select
-                value={proxyIp}
-                onChange={(e) => setProxyIp(e.target.value)}
-                className="w-full bg-[#0d0d0f] border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
-              >
-                {POPULAR_PROXY_IPS.map((ip) => (
-                  <option key={ip} value={ip}>
-                    {ip}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-white/80 mb-1">
-                {isFa ? 'دامنه اختصاصی جهت Route (اختیاری):' : 'Custom Route Pattern:'}
-              </label>
-              <input
-                type="text"
-                value={customDomain}
-                onChange={(e) => setCustomDomain(e.target.value)}
-                placeholder="e.g. proxy.mydomain.com"
-                className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div className="md:col-span-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-xs font-semibold text-blue-300 block">
-                  {isFa ? '🗄️ ساخت و اتصال اتوماتیک دیتابیس KV' : '🗄️ Auto Provision KV Namespace'}
-                </span>
-                <p className="text-[11px] text-white/50">
-                  {isFa ? 'ایجاد دیتابیس KV اختصاصی روی اکانت کلاودفلر جهت ذخیره‌سازی لایه دیتای پنل و کانفیگ‌ها' : 'Provisions KV Namespace NOVA_PANEL_KV automatically during deployment'}
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-white/80 mb-1">
+                  {isFa ? 'نام وورکر (Worker Name):' : 'Worker Name:'}
+                </label>
                 <input
-                  type="checkbox"
-                  checked={autoCreateKv}
-                  onChange={(e) => setAutoCreateKv(e.target.checked)}
-                  className="sr-only peer"
+                  type="text"
+                  value={workerName}
+                  onChange={(e) => setWorkerName(e.target.value)}
+                  className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
                 />
-                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/80 mb-1 flex items-center justify-between">
+                  <span>{isFa ? 'شناسه UUID اختصاصی:' : 'VLESS UUID:'}</span>
+                  <button
+                    onClick={() => setUuid(generateRandomUuid())}
+                    className="text-[11px] text-blue-400 hover:underline"
+                  >
+                    {isFa ? 'تولید جدید' : 'Generate'}
+                  </button>
+                </label>
+                <input
+                  type="text"
+                  value={uuid}
+                  onChange={(e) => setUuid(e.target.value)}
+                  className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-white/80 mb-1 flex items-center justify-between">
-                <span>{isFa ? 'آی‌پی‌های تمیز جهت درج در کانفیگ‌ها (هر سطر یک آی‌پی/دامنه):' : 'Clean IPs List (One per line):'}</span>
-                <span className="text-[11px] text-white/40">{isFa ? 'پشتیبانی از MCI، ایرانسل و مخابرات' : 'Supports Irancell & MCI'}</span>
-              </label>
-              <textarea
-                value={cleanIpText}
-                onChange={(e) => setCleanIpText(e.target.value)}
-                rows={3}
-                className="w-full bg-white/5 border border-white/15 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500 font-mono leading-relaxed"
-              />
+            {/* Advanced Settings Collapsible Accordion */}
+            <div className="border border-white/10 rounded-2xl bg-white/[0.02] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="w-full px-4 py-3 flex items-center justify-between bg-white/5 hover:bg-white/10 transition text-xs font-medium text-white/80"
+              >
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <span className="text-cyan-400 font-bold">⚙️</span>
+                  <span>{isFa ? 'تنظیمات پیشرفته، آی‌پی ریورس و آی‌پی‌های تمیز (اختیاری)' : 'Advanced Route & Clean IP Settings (Optional)'}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono">
+                    {isFa ? 'پیش‌فرض بهینه' : 'Optimal Defaults'}
+                  </span>
+                </div>
+                <span className="text-white/40 text-xs font-mono">{showAdvanced ? '▲ بسته' : '▼ سفارشی‌سازی'}</span>
+              </button>
+
+              {!showAdvanced ? (
+                <div className="p-3 bg-black/40 text-[11px] text-white/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-t border-white/5">
+                  <p className="leading-relaxed">
+                    {isFa
+                      ? '💡 این پارامترها با بهینه‌ترین آی‌پی‌های تمیز (همراه اول، ایرانسل، مخابرات) پر شده‌اند و نیازی به تغییر اولیه ندارند. بعداً نیز در پنل قابل ویرایش هستند.'
+                      : 'Pre-filled with optimal clean IPs. No initial changes needed; editable later in dashboard.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced(true)}
+                    className="text-cyan-400 hover:underline font-mono text-[11px] whitespace-nowrap"
+                  >
+                    {isFa ? 'تغییر مقادیر ✏️' : 'Customize ✏️'}
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 space-y-4 border-t border-white/10 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/80 mb-1">
+                        {isFa ? 'آی‌پی ریورس پروکسی (Proxy IP):' : 'Outbound Proxy IP:'}
+                      </label>
+                      <select
+                        value={proxyIp}
+                        onChange={(e) => setProxyIp(e.target.value)}
+                        className="w-full bg-[#0d0d0f] border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
+                      >
+                        {POPULAR_PROXY_IPS.map((ip) => (
+                          <option key={ip} value={ip}>
+                            {ip}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-white/80 mb-1">
+                        {isFa ? 'دامنه اختصاصی جهت Route (اختیاری):' : 'Custom Route Pattern:'}
+                      </label>
+                      <input
+                        type="text"
+                        value={customDomain}
+                        onChange={(e) => setCustomDomain(e.target.value)}
+                        placeholder="e.g. proxy.mydomain.com"
+                        className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-semibold text-blue-300 block">
+                        {isFa ? '🗄️ ساخت و اتصال اتوماتیک دیتابیس KV' : '🗄️ Auto Provision KV Namespace'}
+                      </span>
+                      <p className="text-[11px] text-white/50">
+                        {isFa ? 'ایجاد دیتابیس KV اختصاصی روی اکانت کلاودفلر جهت ذخیره‌سازی لایه دیتای پنل و کانفیگ‌ها' : 'Provisions KV Namespace NOVA_PANEL_KV automatically during deployment'}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={autoCreateKv}
+                        onChange={(e) => setAutoCreateKv(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/80 mb-1 flex items-center justify-between">
+                      <span>{isFa ? 'آی‌پی‌های تمیز جهت درج در کانفیگ‌ها (هر سطر یک آی‌پی/دامنه):' : 'Clean IPs List (One per line):'}</span>
+                      <span className="text-[11px] text-white/40">{isFa ? 'پشتیبانی از MCI، ایرانسل و مخابرات' : 'Supports Irancell & MCI'}</span>
+                    </label>
+                    <textarea
+                      value={cleanIpText}
+                      onChange={(e) => setCleanIpText(e.target.value)}
+                      rows={3}
+                      className="w-full bg-white/5 border border-white/15 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500 font-mono leading-relaxed"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

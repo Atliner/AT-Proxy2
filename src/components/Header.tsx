@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Zap, Cloud, Cpu, Sparkles, QrCode, Code2, Network, Globe } from 'lucide-react';
+import { Shield, Zap, Cloud, Cpu, Sparkles, QrCode, Code2, Network, Globe, LogOut } from 'lucide-react';
 import { Language } from '../types';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   activeWorkerName?: string;
   isDeployed?: boolean;
   deployedWorkerUrl?: string;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeWorkerName,
   isDeployed,
   deployedWorkerUrl,
+  onLogout,
 }) => {
   const isFa = lang === 'fa';
 
@@ -86,6 +88,18 @@ export const Header: React.FC<HeaderProps> = ({
               <Globe className="w-3.5 h-3.5" />
               <span>{lang === 'fa' ? 'EN' : 'فا'}</span>
             </button>
+
+            {/* Logout / Reset Session Button */}
+            {(isDeployed || cfConnected) && onLogout && (
+              <button
+                onClick={onLogout}
+                className="flex items-center space-x-1.5 space-x-reverse px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-rose-200 transition border border-rose-500/20 text-xs font-medium"
+                title={isFa ? 'خروج و پاک‌سازی توکن / نشست' : 'Logout & Reset Session'}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{isFa ? 'خروج' : 'Logout'}</span>
+              </button>
+            )}
           </div>
         </div>
 

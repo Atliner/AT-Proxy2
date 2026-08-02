@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { CloudflareDeployer } from './components/CloudflareDeployer';
 import { ConfigGenerator } from './components/ConfigGenerator';
@@ -92,6 +92,73 @@ export default function App() {
     },
   ]);
 
+  // Restore session state on initial load
+  useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem('nova_cf_token');
+      const savedIsDeployed = localStorage.getItem('nova_cf_is_deployed') === 'true';
+      const savedWorkerUrl = localStorage.getItem('nova_cf_worker_url');
+      const savedSubUrl = localStorage.getItem('nova_cf_sub_url');
+      const savedWorkerName = localStorage.getItem('nova_cf_worker_name');
+      const savedNodes = localStorage.getItem('nova_cf_nodes');
+
+      if (savedToken) {
+        setCfConnected(true);
+      }
+
+      if (savedIsDeployed && savedWorkerUrl) {
+        setIsDeployed(true);
+        setCfConnected(true);
+        setDeployedWorkerUrl(savedWorkerUrl);
+        if (savedSubUrl) setSubUrl(savedSubUrl);
+        if (savedWorkerName) setActiveWorkerName(savedWorkerName);
+        if (savedNodes) {
+          try {
+            const parsed = JSON.parse(savedNodes);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setNodes(parsed);
+            }
+          } catch (e) {
+            console.error('Failed to parse stored nodes:', e);
+          }
+        }
+        setActiveTab('sub');
+      }
+    } catch (e) {
+      console.error('Error restoring session in App.tsx:', e);
+    }
+  }, []);
+
+  // Update stored nodes whenever nodes change
+  useEffect(() => {
+    if (isDeployed && nodes.length > 0) {
+      try {
+        localStorage.setItem('nova_cf_nodes', JSON.stringify(nodes));
+      } catch (e) {
+        console.error('Failed to save nodes update', e);
+      }
+    }
+  }, [nodes, isDeployed]);
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('nova_cf_token');
+      localStorage.removeItem('nova_cf_is_deployed');
+      localStorage.removeItem('nova_cf_worker_url');
+      localStorage.removeItem('nova_cf_sub_url');
+      localStorage.removeItem('nova_cf_worker_name');
+      localStorage.removeItem('nova_cf_nodes');
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    setIsDeployed(false);
+    setCfConnected(false);
+    setDeployedWorkerUrl('');
+    setSubUrl('');
+    setActiveWorkerName('');
+    setActiveTab('deploy');
+  };
+
   // QR Modal State
   const [qrModal, setQrModal] = useState<{
     isOpen: boolean;
@@ -130,6 +197,7 @@ export default function App() {
         activeWorkerName={activeWorkerName}
         isDeployed={isDeployed}
         deployedWorkerUrl={deployedWorkerUrl}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Body */}
