@@ -508,51 +508,79 @@ async function startServer() {
 
     const cleanHost = targetHost.trim();
     const startTime = Date.now();
+    const isIp = /^[\d\.]+$/.test(cleanHost);
 
-    const socket = new net.Socket();
     let responded = false;
-
-    const finish = (status: 'ok' | 'timeout', errMessage?: string) => {
+    const sendResponse = (status: 'ok' | 'timeout', pingMs: number, errMessage?: string) => {
       if (responded) return;
       responded = true;
-      socket.destroy();
-      const duration = Date.now() - startTime;
-      const pingMs = Math.max(15, duration);
-
-      if (status === 'ok') {
-        return res.json({
-          status: 'ok',
-          targetHost: cleanHost,
-          pingMs
-        });
-      } else {
-        return res.json({
-          status: 'timeout',
-          targetHost: cleanHost,
-          pingMs: 3000,
-          error: errMessage || 'Connection timed out'
-        });
-      }
+      res.json({
+        status,
+        targetHost: cleanHost,
+        pingMs: status === 'ok' ? Math.max(15, pingMs) : 3000,
+        error: errMessage
+      });
     };
 
-    socket.setTimeout(2200);
+    const agent = isIp ? new https.Agent({ rejectUnauthorized: false }) : undefined;
 
-    socket.on('connect', () => {
-      finish('ok');
-    });
-
-    socket.on('timeout', () => {
-      finish('timeout', 'TCP Connection Timeout');
-    });
-
-    socket.on('error', (err) => {
-      finish('timeout', err.message);
-    });
+    const reqOpt = {
+      hostname: cleanHost,
+      port: targetPort,
+      path: '/cdn-cgi/trace',
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Host': cleanHost
+      },
+      timeout: 2200,
+      agent
+    };
 
     try {
-      socket.connect(targetPort, cleanHost);
+      const request = https.request(reqOpt, (response) => {
+        response.resume(); // consume response data to free memory
+        const duration = Date.now() - startTime;
+        sendResponse('ok', duration);
+      });
+
+      request.on('error', () => {
+        // Fallback to HTTP on port 80
+        const httpOpt = {
+          hostname: cleanHost,
+          port: 80,
+          path: '/',
+          method: 'HEAD',
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          timeout: 2000
+        };
+
+        const httpReq = http.request(httpOpt, (httpRes) => {
+          httpRes.resume();
+          const duration = Date.now() - startTime;
+          sendResponse('ok', duration);
+        });
+
+        httpReq.on('error', (hErr) => {
+          sendResponse('timeout', 3000, hErr.message);
+        });
+
+        httpReq.on('timeout', () => {
+          httpReq.destroy();
+          sendResponse('timeout', 3000, 'HTTP Timeout');
+        });
+
+        httpReq.end();
+      });
+
+      request.on('timeout', () => {
+        request.destroy();
+        sendResponse('timeout', 3000, 'HTTPS Timeout');
+      });
+
+      request.end();
     } catch (err: any) {
-      finish('timeout', err.message);
+      sendResponse('timeout', 3000, err.message);
     }
   });
 

@@ -97,7 +97,69 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     }
   };
 
-  // Run live TCP ping scan across selected clean IPs in parallel batches & sync working ones to Community Pool
+  // Hybrid Client-Direct + Server-Proxy Ping Probe
+  const performPing = async (targetHost: string): Promise<{ isOk: boolean; pingMs: number }> => {
+    const cleanHost = targetHost.trim();
+
+    // Strategy 1: Direct Client Browser Probe (measures user's real network latency)
+    const startTime = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2200);
+
+    try {
+      const isIp = /^[\d\.]+$/.test(cleanHost);
+      const url = isIp ? `https://${cleanHost}/cdn-cgi/trace` : `https://${cleanHost}/`;
+
+      await fetch(url, {
+        method: 'GET',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const pingMs = Math.round(performance.now() - startTime);
+      return { isOk: true, pingMs: Math.max(15, pingMs) };
+    } catch (e1) {
+      clearTimeout(timeoutId);
+    }
+
+    // Strategy 2: Direct HTTP Probe fallback (for IPs where HTTPS cert check fails in browser)
+    const httpController = new AbortController();
+    const httpTimeout = setTimeout(() => httpController.abort(), 2000);
+    const httpStart = performance.now();
+    try {
+      await fetch(`http://${cleanHost}/`, {
+        method: 'GET',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: httpController.signal,
+      });
+      clearTimeout(httpTimeout);
+      const pingMs = Math.round(performance.now() - httpStart);
+      return { isOk: true, pingMs: Math.max(15, pingMs) };
+    } catch (e2) {
+      clearTimeout(httpTimeout);
+    }
+
+    // Strategy 3: Server-side proxy ping fallback
+    try {
+      const resp = await fetch('/api/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetHost: cleanHost, port: 443 }),
+      });
+      const data = await resp.json();
+      if (data.status === 'ok' && data.pingMs < 3000) {
+        return { isOk: true, pingMs: data.pingMs };
+      }
+    } catch (e3) {
+      // Backend fallback failed
+    }
+
+    return { isOk: false, pingMs: 3000 };
+  };
+
+  // Run live TCP/HTTP ping scan across selected clean IPs in parallel batches & sync working ones to Community Pool
   const handleScanAll = async () => {
     setScanning(true);
     setPoolSyncStatus(null);
@@ -118,34 +180,22 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
       await Promise.all(
         batch.map(async (item) => {
-          try {
-            const resp = await fetch('/api/ping', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ targetHost: item.ip, port: 443 }),
-            });
-            const data = await resp.json();
+          const res = await performPing(item.ip);
 
-            const isOk = data.status === 'ok' && data.pingMs < 3000;
-            const updatedItem: CleanIpItem = {
-              ...item,
-              pingMs: isOk ? data.pingMs : 3000,
-              status: isOk ? 'ok' : 'fail',
-              lastChecked: new Date().toLocaleTimeString(),
-            };
+          const updatedItem: CleanIpItem = {
+            ...item,
+            pingMs: res.isOk ? res.pingMs : 3000,
+            status: res.isOk ? 'ok' : 'fail',
+            lastChecked: new Date().toLocaleTimeString(),
+          };
 
-            if (isOk && data.pingMs < 800) {
-              workingFound.push(updatedItem);
-            }
-
-            setIpList((prev) =>
-              prev.map((p) => (p.ip === item.ip ? updatedItem : p))
-            );
-          } catch (err) {
-            setIpList((prev) =>
-              prev.map((p) => (p.ip === item.ip ? { ...p, pingMs: 3000, status: 'fail' } : p))
-            );
+          if (res.isOk && res.pingMs < 2500) {
+            workingFound.push(updatedItem);
           }
+
+          setIpList((prev) =>
+            prev.map((p) => (p.ip === item.ip ? updatedItem : p))
+          );
         })
       );
     }
