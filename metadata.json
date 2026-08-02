@@ -1,0 +1,6 @@
+{
+  "name": "Nova Edge X Pro",
+  "description": "Next-Gen Cloudflare Edge Proxy Deployer, VLESS / VMESS Config Engine, Clean IP Scanner & Subscription Manager.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
