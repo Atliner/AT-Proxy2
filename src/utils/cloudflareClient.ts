@@ -31,11 +31,44 @@ export interface DeployWorkerResult {
   error?: string;
 }
 
+// Helper function to safely fetch Cloudflare API endpoints in browser (with CORS proxy fallbacks)
+async function fetchCF(url: string, options: RequestInit = {}): Promise<Response> {
+  // 1. Try Direct Fetch
+  try {
+    const res = await fetch(url, options);
+    if (res.ok || res.status === 400 || res.status === 401 || res.status === 403) {
+      return res;
+    }
+  } catch (err) {
+    console.warn('Direct Cloudflare API fetch failed, trying CORS proxy fallback:', err);
+  }
+
+  // 2. Fallback 1: corsproxy.io
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, options);
+    return res;
+  } catch (err) {
+    console.warn('CORS proxy 1 (corsproxy.io) failed:', err);
+  }
+
+  // 3. Fallback 2: api.allorigins.win
+  try {
+    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, options);
+    return res;
+  } catch (err) {
+    console.warn('CORS proxy 2 failed:', err);
+  }
+
+  throw new Error('خطای شبکه یا CORS در ارتباط مستقیم با Cloudflare API. لطفاً فیلترشکن خود را بررسی یا روشن کنید.');
+}
+
 // 1. Verify Cloudflare Token
 export async function verifyCloudflareToken(apiToken: string): Promise<VerifyTokenResult> {
   const cleanToken = apiToken.trim();
 
-  // Try Express server backend endpoint first
+  // Try Express server backend endpoint first if available
   try {
     const resp = await fetch('/api/cloudflare/verify', {
       method: 'POST',
@@ -54,12 +87,12 @@ export async function verifyCloudflareToken(apiToken: string): Promise<VerifyTok
       }
     }
   } catch (err) {
-    console.warn('Server proxy unavailable, falling back to direct Cloudflare API call:', err);
+    console.warn('Server proxy unavailable, falling back to client Cloudflare API fetch:', err);
   }
 
-  // Fallback: Direct Cloudflare REST API call from browser
+  // Fallback: Direct/Proxy Cloudflare REST API call from browser
   try {
-    const cfResp = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+    const cfResp = await fetchCF('https://api.cloudflare.com/client/v4/accounts', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${cleanToken}`,
@@ -69,7 +102,7 @@ export async function verifyCloudflareToken(apiToken: string): Promise<VerifyTok
 
     const cfData = await cfResp.json();
     if (!cfResp.ok || !cfData.success) {
-      const msg = cfData.errors?.[0]?.message || 'کلید API کلاودفلر معتبر نیست یا دسترسی لازم را ندارد.';
+      const msg = cfData.errors?.[0]?.message || 'کلید API کلاودفلر معتبر نیست یا دسترسی کافی ندارد.';
       return { success: false, accounts: [], error: msg };
     }
 
@@ -83,7 +116,7 @@ export async function verifyCloudflareToken(apiToken: string): Promise<VerifyTok
     return {
       success: false,
       accounts: [],
-      error: 'خطا در ارتباط مستقیم با Cloudflare API: ' + (err.message || 'مشکل شبکه‌ای'),
+      error: (err.message || 'خطا در ارتباط با Cloudflare API'),
     };
   }
 }
@@ -108,16 +141,16 @@ export async function fetchCloudflareZones(apiToken: string, accountId: string):
       }
     }
   } catch (err) {
-    console.warn('Server proxy unavailable, falling back to direct Cloudflare API call:', err);
+    console.warn('Server proxy unavailable, falling back to client Cloudflare API fetch:', err);
   }
 
-  // Fallback: Direct Cloudflare REST API call from browser
+  // Fallback: Direct/Proxy Cloudflare REST API call from browser
   try {
     const url = accountId
       ? `https://api.cloudflare.com/client/v4/zones?account.id=${accountId}&per_page=50`
       : 'https://api.cloudflare.com/client/v4/zones?per_page=50';
 
-    const cfResp = await fetch(url, {
+    const cfResp = await fetchCF(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${cleanToken}`,
@@ -140,7 +173,7 @@ export async function fetchCloudflareZones(apiToken: string, accountId: string):
 async function getOrCreateKvDirect(apiToken: string, accountId: string, title: string): Promise<string | null> {
   try {
     // List KV Namespaces
-    const listResp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`, {
+    const listResp = await fetchCF(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiToken}`,
@@ -154,7 +187,7 @@ async function getOrCreateKvDirect(apiToken: string, accountId: string, title: s
     }
 
     // Create KV Namespace if not existing
-    const createResp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`, {
+    const createResp = await fetchCF(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiToken}`,
@@ -247,7 +280,7 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     formData.append('worker.js', new Blob([scriptCode], { type: 'application/javascript+module' }), 'worker.js');
 
-    let cfResp = await fetch(deployUrl, {
+    let cfResp = await fetchCF(deployUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${cleanToken}`,
@@ -259,7 +292,7 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
 
     // Fallback: If multipart fails, attempt plain text JavaScript upload
     if (!cfResp.ok || !cfData.success) {
-      const plainResp = await fetch(deployUrl, {
+      const plainResp = await fetchCF(deployUrl, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${cleanToken}`,
@@ -278,7 +311,7 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
     // D. Enable .workers.dev subdomain
     try {
       const subdomainUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/subdomain`;
-      await fetch(subdomainUrl, {
+      await fetchCF(subdomainUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${cleanToken}`,
@@ -295,7 +328,7 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
     if (customDomain && zoneId) {
       try {
         const routeUrl = `https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`;
-        await fetch(routeUrl, {
+        await fetchCF(routeUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${cleanToken}`,
