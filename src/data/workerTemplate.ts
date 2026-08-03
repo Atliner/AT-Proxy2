@@ -102,7 +102,16 @@ export default {
         }
       }
 
-      if (url.pathname === DEFAULT_SUB_PATH || url.pathname.startsWith('/sub') || url.pathname.startsWith('/api/sub') || url.pathname === '/' + currentUuid) {
+      const isSubPath = url.pathname === DEFAULT_SUB_PATH ||
+        url.pathname.startsWith('/sub') ||
+        url.pathname.startsWith('/api/sub') ||
+        url.pathname === '/' + currentUuid;
+
+      const isSubQueryOrClient = url.searchParams.has('sub') ||
+        url.searchParams.has('format') ||
+        /v2ray|clash|singbox|sing-box|streisand|shadowrocket|hiddify|nekobox|stash|foxray|sub|mihomo/i.test(request.headers.get('User-Agent') || '');
+
+      if (isSubPath || isSubQueryOrClient) {
         return handleSub(request, url, currentUuid, currentCleanIps);
       }
 
@@ -322,21 +331,48 @@ function stringifyUuid(arr) {
 function handleSub(request, url, userUuid, cleanIps) {
   const host = request.headers.get('Host') || url.hostname;
   const userAgent = (request.headers.get('User-Agent') || '').toLowerCase();
+  const format = (url.searchParams.get('format') || '').toLowerCase();
 
   const nodes = cleanIps.map((cleanIp, index) => {
-    const name = 'Nova-Edge-' + (index + 1) + '-' + cleanIp;
-    return 'vless://' + userUuid + '@' + cleanIp + ':443?encryption=none&security=tls&type=ws&host=' + host + '&sni=' + host + '&fp=chrome&path=%2Fvless-ws%3Fed%3D2048#' + encodeURIComponent(name);
+    const isDomain = cleanIp.includes('.') && !cleanIp.match(/^\d+\.\d+\.\d+\.\d+$/);
+    const sniVal = isDomain ? cleanIp : host;
+    const name = 'Nova-Edge-' + (index + 1) + '-' + (isDomain ? cleanIp : cleanIp);
+    return 'vless://' + userUuid + '@' + cleanIp + ':443?encryption=none&security=tls&type=ws&host=' + host + '&sni=' + sniVal + '&fp=chrome&path=%2Fvless-ws%3Fed%3D2048#' + encodeURIComponent(name);
   });
 
-  const rawSubContent = nodes.join('\\n');
+  const rawSubContent = nodes.join('\n');
 
-  if (userAgent.includes('clash')) {
-    const clashYaml = 'port: 7890\\nsocks-port: 7891\\nallow-lan: true\\nmode: Rule\\nlog-level: info\\nproxies:\\n' +
-      cleanIps.map((cleanIp, i) => '  - name: "Nova-VLESS-' + (i + 1) + '"\\n    type: vless\\n    server: ' + cleanIp + '\\n    port: 443\\n    uuid: ' + userUuid + '\\n    udp: true\\n    tls: true\\n    servername: ' + host + '\\n    network: ws\\n    ws-opts:\\n      path: "/vless-ws?ed=2048"\\n      headers:\\n        Host: ' + host).join('\\n') +
-      '\\nproxy-groups:\\n  - name: "Nova-Proxy-Auto"\\n    type: url-test\\n    url: "http://www.gstatic.com/generate_204"\\n    interval: 300\\n    proxies:\\n' +
-      cleanIps.map((_, i) => '      - "Nova-VLESS-' + (i + 1) + '"').join('\\n') +
-      '\\nrules:\\n  - GEOIP,IR,DIRECT\\n  - MATCH,Nova-Proxy-Auto';
-    return new Response(clashYaml, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  if (format === 'clash' || userAgent.includes('clash') || userAgent.includes('mihomo')) {
+    const clashYaml = 'port: 7890\nsocks-port: 7891\nallow-lan: true\nmode: Rule\nlog-level: info\nproxies:\n' +
+      cleanIps.map((cleanIp, i) => {
+        const isDomain = cleanIp.includes('.') && !cleanIp.match(/^\d+\.\d+\.\d+\.\d+$/);
+        const sniVal = isDomain ? cleanIp : host;
+        return '  - name: "Nova-VLESS-' + (i + 1) + '"\n    type: vless\n    server: ' + cleanIp + '\n    port: 443\n    uuid: ' + userUuid + '\n    udp: true\n    tls: true\n    servername: ' + sniVal + '\n    network: ws\n    ws-opts:\n      path: "/vless-ws?ed=2048"\n      headers:\n        Host: ' + host;
+      }).join('\n') +
+      '\nproxy-groups:\n  - name: "Nova-Proxy-Auto"\n    type: url-test\n    url: "http://www.gstatic.com/generate_204"\n    interval: 300\n    proxies:\n' +
+      cleanIps.map((_, i) => '      - "Nova-VLESS-' + (i + 1) + '"').join('\n') +
+      '\nrules:\n  - GEOIP,IR,DIRECT\n  - MATCH,Nova-Proxy-Auto';
+    return new Response(clashYaml, { headers: { 'Content-Type': 'text/yaml; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
+  }
+
+  if (format === 'singbox' || userAgent.includes('singbox') || userAgent.includes('sing-box')) {
+    const outbounds = cleanIps.map((cleanIp, i) => {
+      const isDomain = cleanIp.includes('.') && !cleanIp.match(/^\d+\.\d+\.\d+\.\d+$/);
+      return {
+        type: 'vless',
+        tag: 'Nova-VLESS-' + (i + 1),
+        server: cleanIp,
+        server_port: 443,
+        uuid: userUuid,
+        tls: { enabled: true, server_name: isDomain ? cleanIp : host, insecure: false },
+        transport: { type: 'ws', path: '/vless-ws?ed=2048', headers: { Host: host } }
+      };
+    });
+    return new Response(JSON.stringify({ outbounds }, null, 2), { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
+  }
+
+  if (format === 'raw') {
+    return new Response(rawSubContent, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
   }
 
   const b64 = btoa(unescape(encodeURIComponent(rawSubContent)));

@@ -691,28 +691,40 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
           {/* Clean IP / Domain Data Table */}
           <div className="bg-white/[0.03] border border-white/10 rounded-3xl overflow-hidden">
-            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+            <div className="p-5 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs font-mono uppercase tracking-widest text-white/40">
                 {isFa ? `لیست موارد آماده اسکن (${filteredList.length})` : `Discovered Clean Endpoints (${filteredList.length})`}
               </span>
-              {onExportCleanIpsToNodes && (
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => {
-                    const workingItems = filteredList
-                      .filter((item) => item.status === 'ok' || item.pingMs !== null)
-                      .map((item) => item.ip);
-                    if (workingItems.length === 0) {
-                      alert(isFa ? 'لطفاً ابتدا اسکن را انجام دهید تا آدرس‌های سالم شناسایی شوند.' : 'Please run scan first.');
-                      return;
-                    }
-                    handleApplyPoolToNodes(workingItems);
-                  }}
-                  className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-medium transition flex items-center space-x-1.5 space-x-reverse"
+                  onClick={handleRemoveFailedItems}
+                  className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-medium transition flex items-center space-x-1.5 space-x-reverse"
+                  title="Purge items that failed scan or timed out"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isFa ? 'اعمال آدرس‌های سالم به کانفیگ‌ها' : 'Apply Clean Endpoints to Configs'}</span>
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{isFa ? '🧹 پاکسازی موارد بدون پاسخ' : 'Purge Timed Out'}</span>
                 </button>
-              )}
+
+                {onExportCleanIpsToNodes && (
+                  <button
+                    onClick={() => {
+                      const workingItems = filteredList
+                        .filter((item) => item.status === 'ok' || item.pingMs !== null)
+                        .map((item) => item.ip);
+                      if (workingItems.length === 0) {
+                        alert(isFa ? 'لطفاً ابتدا اسکن را انجام دهید تا آدرس‌های سالم شناسایی شوند.' : 'Please run scan first.');
+                        return;
+                      }
+                      handleApplyPoolToNodes(workingItems);
+                    }}
+                    className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-medium transition flex items-center space-x-1.5 space-x-reverse"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{isFa ? 'اعمال آدرس‌های سالم به کانفیگ‌ها' : 'Apply Clean Endpoints to Configs'}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -723,7 +735,8 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
                     <th className="p-4 font-normal">اپراتور (ISP)</th>
                     <th className="p-4 font-normal">موقعیت/مکان CDN</th>
                     <th className="p-4 font-normal">تاخیر پینگ (Ping)</th>
-                    <th className="p-4 font-normal">وضعیت و اشتراک‌گذاری</th>
+                    <th className="p-4 font-normal">وضعیت</th>
+                    <th className="p-4 font-normal w-12 text-center">حذف</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
@@ -788,6 +801,15 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
                             <span className="text-white/40 font-sans text-[11px]">آماده اسکن</span>
                           )}
                         </td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => handleRemoveSingleItem(item.ip)}
+                            className="p-1.5 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                            title="Remove from list"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -812,7 +834,16 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center space-x-2 space-x-reverse">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleRemoveFailedPoolItems}
+                className="py-2.5 px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium rounded-xl border border-rose-500/30 transition flex items-center space-x-1.5 space-x-reverse"
+                title="Purge failed/unresponsive pool items"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                <span>{isFa ? '🧹 پاکسازی غیرفعال‌ها' : 'Purge Unresponsive'}</span>
+              </button>
+
               <button
                 onClick={fetchCommunityPool}
                 disabled={poolLoading}
@@ -874,6 +905,7 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
                     <th className="p-4 font-normal">میانگین پینگ</th>
                     <th className="p-4 font-normal">تعداد تایید کاربران</th>
                     <th className="p-4 font-normal">وضعیت استخر</th>
+                    <th className="p-4 font-normal w-12 text-center">حذف</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
@@ -912,6 +944,15 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>آماده استفاده</span>
                           </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => handleRemoveSinglePoolItem(item.ip)}
+                            className="p-1.5 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                            title="Remove from pool"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
