@@ -31,14 +31,11 @@ export function generateVlessUri(node: ProxyNode): string {
   params.set('security', security || 'tls');
   params.set('type', transport || 'ws');
   if (host) params.set('host', host);
-  const effectiveSni = sni || host || '';
+  const isDomain = address.includes('.') && !address.match(/^\d+\.\d+\.\d+\.\d+$/);
+  const effectiveSni = sni || (isDomain ? address : host) || '';
   if (effectiveSni) params.set('sni', effectiveSni);
   params.set('fp', 'chrome');
   if (path) params.set('path', path);
-
-  if (fragment && fragment.enabled) {
-    params.set('fragment', `${fragment.length || '10-20'},${fragment.interval || '10-20'},${fragment.packets || 'tlshello'}`);
-  }
 
   const queryStr = params.toString();
   const remark = encodeURIComponent(name || 'Nova-VLESS-Node');

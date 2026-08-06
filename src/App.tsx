@@ -9,7 +9,7 @@ import { WorkerCodeEditor } from './components/WorkerCodeEditor';
 import { AiAssistant } from './components/AiAssistant';
 import { QrCodeModal } from './components/QrCodeModal';
 import { Language, ProxyNode } from './types';
-import { generateRandomUuid } from './utils/configParsers';
+import { generateRandomUuid, generateMultiNodesBatch } from './utils/configParsers';
 import { INITIAL_CLEAN_IPS } from './data/cleanIps';
 
 export default function App() {
@@ -241,6 +241,21 @@ export default function App() {
             {activeTab === 'clean-ip' && (
               <CleanIpScanner
                 lang={lang}
+                onExportCleanIpsToNodes={(cleanIps) => {
+                  const currentWorker = deployedWorkerUrl
+                    ? new URL(deployedWorkerUrl).hostname
+                    : 'edge-nova.workers.dev';
+                  const createdBatch = generateMultiNodesBatch(
+                    currentWorker,
+                    generateRandomUuid(),
+                    cleanIps.map((ip) => ({
+                      ip,
+                      isp: ip.includes('.') && !ip.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'Clean SNI' : 'Clean IP',
+                    }))
+                  );
+                  setNodes((prev) => [...createdBatch, ...prev]);
+                  setActiveTab('sub');
+                }}
               />
             )}
 

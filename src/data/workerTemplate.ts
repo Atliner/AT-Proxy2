@@ -661,8 +661,10 @@ function renderWorkerPanelHtml(request, url, userUuid, cleanIps, emergencyStop) 
       const container = document.getElementById("vless-links-container");
       container.innerHTML = "";
       data.cleanIps.forEach((cip, i) => {
+        const isDomain = cip.includes(".") && !cip.match(/^\d+\.\d+\.\d+\.\d+$/);
+        const sniVal = isDomain ? cip : data.host;
         const name = "Nova-Edge-" + (i + 1) + "-" + cip;
-        const vlink = "vless://" + data.uuid + "@" + cip + ":443?encryption=none&security=tls&type=ws&host=" + data.host + "&path=%2Fvless-ws%3Fed%3D2048#" + encodeURIComponent(name);
+        const vlink = "vless://" + data.uuid + "@" + cip + ":443?encryption=none&security=tls&type=ws&host=" + data.host + "&sni=" + sniVal + "&fp=chrome&path=%2Fvless-ws%3Fed%3D2048#" + encodeURIComponent(name);
         const div = document.createElement("div");
         div.className = "p-3.5 bg-black/40 border border-white/10 rounded-2xl flex items-center justify-between gap-2 text-xs font-mono";
         div.innerHTML = '<span class="truncate text-cyan-300 flex-1">' + vlink + '</span>' +

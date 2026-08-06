@@ -417,6 +417,14 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       } catch (err) {
         // Ignored on static site hosting
       }
+
+      // Instantly update community pool state with newly verified working items
+      setCommunityPool((prev) => {
+        const existingIps = new Set(prev.map((p) => p.ip));
+        const newItems = workingFound.filter((w) => !existingIps.has(w.ip));
+        return [...prev, ...newItems];
+      });
+      fetchCommunityPool();
     } else {
       setPoolSyncStatus(
         isFa
