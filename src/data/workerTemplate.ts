@@ -102,6 +102,10 @@ export default {
         }
       }
 
+      if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
+        return await vlessOverWSHandler(request, currentUuid, currentProxyIp);
+      }
+
       const isSubPath = url.pathname === DEFAULT_SUB_PATH ||
         url.pathname.startsWith('/sub') ||
         url.pathname.startsWith('/api/sub') ||
@@ -113,10 +117,6 @@ export default {
 
       if (isSubPath || isSubQueryOrClient) {
         return handleSub(request, url, currentUuid, currentCleanIps);
-      }
-
-      if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-        return await vlessOverWSHandler(request, currentUuid, currentProxyIp);
       }
 
       return renderWorkerPanelHtml(request, url, currentUuid, currentCleanIps, emergencyStop);
@@ -375,7 +375,13 @@ function handleSub(request, url, userUuid, cleanIps) {
     return new Response(rawSubContent, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
   }
 
-  const b64 = btoa(unescape(encodeURIComponent(rawSubContent)));
+  let b64 = '';
+  try {
+    b64 = btoa(rawSubContent);
+  } catch (e) {
+    b64 = btoa(unescape(encodeURIComponent(rawSubContent)));
+  }
+
   return new Response(b64, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
