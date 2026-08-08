@@ -542,57 +542,103 @@ async function startServer() {
     });
   });
 
-  // Single target TCP Ping using net.Socket (fast and accurate for IPs and Domains)
-  app.post('/api/ping', async (req: Request, res: Response) => {
-    const { targetHost, port } = req.body;
-    const targetPort = Number(port) || 443;
+  // Delete IP(s) or Domain(s) from Community Pool on server
+  app.post('/api/clean-ips/delete', (req: Request, res: Response) => {
+    const { targets } = req.body;
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return res.status(400).json({ error: 'targets array required' });
+    }
 
+    const targetSet = new Set(targets.map((t: string) => t.toLowerCase().trim()));
+    communityIpPool = communityIpPool.filter((p) => !targetSet.has(p.ip.toLowerCase().trim()));
+
+    return res.json({
+      success: true,
+      message: `Removed ${targets.length} items from server community pool`,
+      remaining: communityIpPool.length
+    });
+  });
+
+  // Helper for high-precision HTTPS/TLS probe matching V2Ray client connectivity
+  function probeCloudflareEndpoint(targetHost: string, timeoutMs = 2200): Promise<{ isOk: boolean; pingMs: number; error?: string }> {
+    return new Promise((resolve) => {
+      if (!targetHost || typeof targetHost !== 'string') {
+        return resolve({ isOk: false, pingMs: 3000, error: 'Invalid host' });
+      }
+      const cleanHost = targetHost.trim();
+      const isIp = /^[\d\.]+$/.test(cleanHost);
+      const hostHeader = isIp ? 'speed.cloudflare.com' : cleanHost;
+      const serverName = isIp ? 'speed.cloudflare.com' : cleanHost;
+
+      const startTime = Date.now();
+      let finished = false;
+
+      const done = (isOk: boolean, pingMs: number, error?: string) => {
+        if (finished) return;
+        finished = true;
+        resolve({ isOk, pingMs: isOk ? Math.max(15, pingMs) : 3000, error });
+      };
+
+      const req = https.request(
+        {
+          host: cleanHost,
+          port: 443,
+          path: '/cdn-cgi/trace',
+          method: 'GET',
+          servername: serverName,
+          headers: {
+            'Host': hostHeader,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) V2Ray/5.10.0',
+            'Accept': '*/*',
+            'Connection': 'close'
+          },
+          timeout: timeoutMs,
+          rejectUnauthorized: false
+        },
+        (res) => {
+          const duration = Date.now() - startTime;
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 505) {
+            done(true, duration);
+          } else {
+            done(false, 3000, `HTTP status ${res.statusCode}`);
+          }
+          res.resume();
+        }
+      );
+
+      req.on('timeout', () => {
+        req.destroy();
+        done(false, 3000, 'TLS/HTTPS Timeout');
+      });
+
+      req.on('error', (err: any) => {
+        req.destroy();
+        done(false, 3000, err?.message || 'TLS Connection Error');
+      });
+
+      req.end();
+    });
+  }
+
+  // Single target Ping using TLS/HTTPS Probe (100% accurate for V2Ray / Cloudflare CDN)
+  app.post('/api/ping', async (req: Request, res: Response) => {
+    const { targetHost } = req.body;
     if (!targetHost || typeof targetHost !== 'string') {
       return res.status(400).json({ error: 'targetHost is required' });
     }
 
     const cleanHost = targetHost.trim();
-    const startTime = Date.now();
-    let responded = false;
+    const probe = await probeCloudflareEndpoint(cleanHost, 2200);
 
-    const finish = (status: 'ok' | 'timeout', pingMs: number, errMessage?: string) => {
-      if (responded) return;
-      responded = true;
-      res.json({
-        status,
-        targetHost: cleanHost,
-        pingMs: status === 'ok' ? Math.max(15, pingMs) : 3000,
-        error: errMessage
-      });
-    };
-
-    const socket = new net.Socket();
-    socket.setTimeout(2200);
-
-    socket.on('connect', () => {
-      const duration = Date.now() - startTime;
-      socket.destroy();
-      finish('ok', duration);
+    res.json({
+      status: probe.isOk ? 'ok' : 'timeout',
+      targetHost: cleanHost,
+      pingMs: probe.pingMs,
+      error: probe.error
     });
-
-    socket.on('timeout', () => {
-      socket.destroy();
-      finish('timeout', 3000, 'TCP Timeout');
-    });
-
-    socket.on('error', (err) => {
-      socket.destroy();
-      finish('timeout', 3000, err.message);
-    });
-
-    try {
-      socket.connect(targetPort, cleanHost);
-    } catch (err: any) {
-      finish('timeout', 3000, err.message);
-    }
   });
 
-  // Batch TCP Ping endpoint for rapid scanner execution
+  // Batch Ping endpoint using TLS/HTTPS Probe for rapid scanner execution
   app.post('/api/ping-batch', async (req: Request, res: Response) => {
     const { targets } = req.body;
     if (!Array.isArray(targets)) {
@@ -600,50 +646,17 @@ async function startServer() {
     }
 
     const results = await Promise.all(
-      targets.map((targetHost: string) => {
-        return new Promise<{ targetHost: string; status: 'ok' | 'timeout'; pingMs: number }>((resolve) => {
-          if (!targetHost || typeof targetHost !== 'string') {
-            return resolve({ targetHost: '', status: 'timeout', pingMs: 3000 });
-          }
-          const cleanHost = targetHost.trim();
-          const startTime = Date.now();
-          let finished = false;
-
-          const done = (status: 'ok' | 'timeout', pingMs: number) => {
-            if (finished) return;
-            finished = true;
-            resolve({
-              targetHost: cleanHost,
-              status,
-              pingMs: status === 'ok' ? Math.max(15, pingMs) : 3000
-            });
-          };
-
-          const socket = new net.Socket();
-          socket.setTimeout(2200);
-
-          socket.on('connect', () => {
-            const duration = Date.now() - startTime;
-            socket.destroy();
-            done('ok', duration);
-          });
-
-          socket.on('timeout', () => {
-            socket.destroy();
-            done('timeout', 3000);
-          });
-
-          socket.on('error', () => {
-            socket.destroy();
-            done('timeout', 3000);
-          });
-
-          try {
-            socket.connect(443, cleanHost);
-          } catch (err) {
-            done('timeout', 3000);
-          }
-        });
+      targets.map(async (targetHost: string) => {
+        if (!targetHost || typeof targetHost !== 'string') {
+          return { targetHost: '', status: 'timeout' as const, pingMs: 3000 };
+        }
+        const cleanHost = targetHost.trim();
+        const probe = await probeCloudflareEndpoint(cleanHost, 2200);
+        return {
+          targetHost: cleanHost,
+          status: probe.isOk ? ('ok' as const) : ('timeout' as const),
+          pingMs: probe.pingMs
+        };
       })
     );
 

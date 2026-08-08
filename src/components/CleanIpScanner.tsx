@@ -138,7 +138,31 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     return results;
   };
 
-  // Browser direct ping probe for static hostings (GitHub Pages)
+  // Persistent deleted blacklist management
+  const getDeletedIps = (): Set<string> => {
+    try {
+      const raw = localStorage.getItem('nova_deleted_ips');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr.map((x: string) => x.toLowerCase().trim()));
+      }
+    } catch (e) {}
+    return new Set();
+  };
+
+  const addDeletedIps = (ipsToRemove: string[]) => {
+    try {
+      const current = getDeletedIps();
+      ipsToRemove.forEach((ip) => {
+        if (ip && typeof ip === 'string') {
+          current.add(ip.toLowerCase().trim());
+        }
+      });
+      localStorage.setItem('nova_deleted_ips', JSON.stringify(Array.from(current)));
+    } catch (e) {}
+  };
+
+  // Browser direct ping probe for static hostings (GitHub Pages) with real HTTPS TLS probe
   const browserPingProbe = (targetHost: string, timeoutMs = 2200): Promise<{ isOk: boolean; pingMs: number }> => {
     return new Promise((resolve) => {
       const cleanHost = targetHost.trim();
@@ -158,12 +182,13 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       };
 
       const timer = setTimeout(() => done(false), timeoutMs);
-
       const controller = new AbortController();
-      const fetchUrl = isIp ? `http://${cleanHost}/` : `https://${cleanHost}/favicon.ico`;
+
+      // Use https to perform actual HTTPS handshake request
+      const fetchUrl = isIp ? `https://${cleanHost}/cdn-cgi/trace` : `https://${cleanHost}/favicon.ico`;
 
       fetch(fetchUrl, {
-        method: 'GET',
+        method: 'HEAD',
         mode: 'no-cors',
         cache: 'no-store',
         signal: controller.signal,
@@ -181,20 +206,6 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
             done(false);
           }
         });
-
-      const img = new Image();
-      img.onload = () => {
-        clearTimeout(timer);
-        done(true);
-      };
-      img.onerror = () => {
-        clearTimeout(timer);
-        const elapsed = performance.now() - start;
-        if (elapsed < timeoutMs - 150) {
-          done(true, Math.round(elapsed));
-        }
-      };
-      img.src = `${isIp ? 'http' : 'https'}://${cleanHost}/favicon.ico?_t=${Date.now()}`;
     });
   };
 
@@ -204,9 +215,12 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       const saved1 = localStorage.getItem('nova_community_pool');
       const saved2 = localStorage.getItem('nova_community_clean_pool');
       const saved = saved1 || saved2;
+      const deletedSet = getDeletedIps();
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((item: any) => item && item.ip && !deletedSet.has(item.ip.toLowerCase().trim()));
+        }
       }
     } catch (e) {}
     return [];
@@ -214,7 +228,9 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
   const saveLocalCommunityPool = (pool: any[]) => {
     try {
-      const json = JSON.stringify(pool);
+      const deletedSet = getDeletedIps();
+      const cleanPool = pool.filter((p) => p && p.ip && !deletedSet.has(p.ip.toLowerCase().trim()));
+      const json = JSON.stringify(cleanPool);
       localStorage.setItem('nova_community_pool', json);
       localStorage.setItem('nova_community_clean_pool', json);
     } catch (e) {}
@@ -223,6 +239,7 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   // Fetch Community Pool on load or tab switch
   const fetchCommunityPool = async () => {
     setPoolLoading(true);
+    const deletedSet = getDeletedIps();
 
     const defaultStaticPool = [
       { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 165, status: 'ok', verifiedCount: 42, type: 'ip' },
@@ -233,7 +250,7 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       { ip: 'speed.cloudflare.com', isp: 'Global Cloudflare CDN', city: 'Global Cloudflare', pingMs: 120, status: 'ok', verifiedCount: 25, type: 'domain' },
       { ip: '172.67.182.201', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 175, status: 'ok', verifiedCount: 24, type: 'ip' },
       { ip: 'visa.com', isp: 'Global Cloudflare CDN', city: 'Visa Edge CDN', pingMs: 190, status: 'ok', verifiedCount: 22, type: 'domain' }
-    ];
+    ].filter((p) => !deletedSet.has(p.ip.toLowerCase().trim()));
 
     let mergedPool = getLocalCommunityPool();
 
@@ -242,10 +259,15 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       if (resp.ok) {
         const data = await resp.json();
         if (data.success && Array.isArray(data.pool)) {
-          const apiPoolMap = new Map(data.pool.map((p: any) => [p.ip.toLowerCase(), p]));
+          const apiPoolMap = new Map(
+            data.pool
+              .filter((p: any) => !deletedSet.has(p.ip.toLowerCase().trim()))
+              .map((p: any) => [p.ip.toLowerCase().trim(), p])
+          );
           mergedPool.forEach((lp) => {
-            if (!apiPoolMap.has(lp.ip.toLowerCase())) {
-              apiPoolMap.set(lp.ip.toLowerCase(), lp);
+            const key = lp.ip.toLowerCase().trim();
+            if (!deletedSet.has(key) && !apiPoolMap.has(key)) {
+              apiPoolMap.set(key, lp);
             }
           });
           const result = Array.from(apiPoolMap.values());
@@ -260,11 +282,14 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     }
 
     // Static fallback merged with local storage
-    const poolMap = new Map(defaultStaticPool.map((p) => [p.ip.toLowerCase(), p]));
+    const poolMap = new Map(defaultStaticPool.map((p) => [p.ip.toLowerCase().trim(), p]));
     mergedPool.forEach((lp) => {
-      poolMap.set(lp.ip.toLowerCase(), lp);
+      const key = lp.ip.toLowerCase().trim();
+      if (!deletedSet.has(key)) {
+        poolMap.set(key, lp);
+      }
     });
-    const finalPool = Array.from(poolMap.values());
+    const finalPool = Array.from(poolMap.values()).filter((p) => !deletedSet.has(p.ip.toLowerCase().trim()));
     setCommunityPool(finalPool);
     saveLocalCommunityPool(finalPool);
     setPoolLoading(false);
@@ -330,6 +355,19 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
   useEffect(() => {
     fetchCommunityPool();
+    const deletedSet = getDeletedIps();
+    try {
+      const savedList = localStorage.getItem('nova_scanner_ip_list');
+      if (savedList) {
+        const parsed = JSON.parse(savedList);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((item: any) => item && item.ip && !deletedSet.has(item.ip.toLowerCase().trim()));
+          setIpList(valid);
+          return;
+        }
+      }
+    } catch (e) {}
+    setIpList(INITIAL_CLEAN_IPS.filter((item) => !deletedSet.has(item.ip.toLowerCase().trim())));
   }, []);
 
   // Discover fresh candidate Cloudflare IPs or Clean Domains
@@ -639,12 +677,22 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   };
 
   const handleRemoveFailedItems = () => {
+    const failedItems = ipList.filter(
+      (item) => item.status === 'fail' || (item.pingMs !== null && item.pingMs >= 2500)
+    );
+    const failedIps = failedItems.map((item) => item.ip);
+    addDeletedIps(failedIps);
+
     const beforeCount = ipList.length;
     const cleaned = ipList.filter(
       (item) => item.status !== 'fail' && (item.pingMs === null || (item.pingMs !== undefined && item.pingMs < 2500))
     );
     const removedCount = beforeCount - cleaned.length;
     setIpList(cleaned);
+    try {
+      localStorage.setItem('nova_scanner_ip_list', JSON.stringify(cleaned));
+    } catch (e) {}
+
     setPoolSyncStatus(
       isFa
         ? `🧹 تعداد ${removedCount} مورد بدون پاسخ و تایم‌اوت با موفقیت از اسکنر حذف گردید!`
@@ -653,25 +701,65 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   };
 
   const handleRemoveSingleItem = (targetIp: string) => {
-    setIpList((prev) => prev.filter((item) => item.ip !== targetIp));
+    const cleanTarget = targetIp.trim();
+    addDeletedIps([cleanTarget]);
+
+    setIpList((prev) => {
+      const updated = prev.filter((item) => item.ip.toLowerCase().trim() !== cleanTarget.toLowerCase());
+      try {
+        localStorage.setItem('nova_scanner_ip_list', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
-  const handleRemoveFailedPoolItems = () => {
+  const handleRemoveFailedPoolItems = async () => {
+    const failedItems = communityPool.filter(
+      (item) => item.status === 'fail' || (item.pingMs !== null && item.pingMs >= 2500)
+    );
+    const failedIps = failedItems.map((item) => item.ip);
+    addDeletedIps(failedIps);
+
     const beforeCount = communityPool.length;
     const cleaned = communityPool.filter(
       (item) => item.status !== 'fail' && (item.pingMs === null || (item.pingMs !== undefined && item.pingMs < 2500))
     );
     const removedCount = beforeCount - cleaned.length;
     setCommunityPool(cleaned);
+    saveLocalCommunityPool(cleaned);
+
+    try {
+      await fetch('/api/clean-ips/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targets: failedIps }),
+      });
+    } catch (e) {}
+
     setPoolSyncStatus(
       isFa
         ? `🧹 تعداد ${removedCount} مورد بدون پاسخ و غیرفعال با موفقیت از استخر حذف گردید!`
-        : `🧹 Removed ${removedCount} failed items from community pool!`
+        : `🧹 Permanently removed ${removedCount} failed items from community pool!`
     );
   };
 
-  const handleRemoveSinglePoolItem = (targetIp: string) => {
-    setCommunityPool((prev) => prev.filter((item) => item.ip !== targetIp));
+  const handleRemoveSinglePoolItem = async (targetIp: string) => {
+    const cleanTarget = targetIp.trim();
+    addDeletedIps([cleanTarget]);
+
+    setCommunityPool((prev) => {
+      const updated = prev.filter((item) => item.ip.toLowerCase().trim() !== cleanTarget.toLowerCase());
+      saveLocalCommunityPool(updated);
+      return updated;
+    });
+
+    try {
+      await fetch('/api/clean-ips/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targets: [cleanTarget] }),
+      });
+    } catch (e) {}
   };
 
   const filteredList = ipList.filter((item) => {
