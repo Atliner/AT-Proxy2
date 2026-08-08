@@ -269,7 +269,18 @@ export default function App() {
 
             {activeTab === 'editor' && <WorkerCodeEditor lang={lang} />}
 
-            {activeTab === 'ai' && <AiAssistant lang={lang} />}
+            {activeTab === 'ai' && (
+              <AiAssistant
+                lang={lang}
+                nodes={nodes}
+                setNodes={setNodes}
+                isDeployed={isDeployed}
+                deployedWorkerUrl={deployedWorkerUrl}
+                subUrl={subUrl}
+                activeWorkerName={activeWorkerName}
+                setActiveTab={setActiveTab}
+              />
+            )}
           </>
         )}
       </main>

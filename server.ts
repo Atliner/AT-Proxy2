@@ -651,24 +651,56 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------------------
-  // 4. GEMINI AI ANTI-CENSORSHIP COPILOT WITH FALLBACK ENGINE
+  // 4. GEMINI AI ANTI-CENSORSHIP COPILOT WITH CONVERSATIONAL CHAT & PANEL CONTROL
   // -------------------------------------------------------------------------
 
   app.post('/api/ai/optimize', async (req: Request, res: Response) => {
     try {
-      const { ispName, prompt } = req.body;
+      const { ispName, prompt, messages, panelContext } = req.body;
       const apiKey = process.env.GEMINI_API_KEY;
+
+      const systemInstruction = `You are Nova Proxy Ultra AI Network Engineer & Anti-Censorship Copilot.
+You specialize in Cloudflare Edge VLESS / VMESS Workers, Fragment parameters (length, interval, packets), SNI spoofing, clean IP optimization, and client routing for restrictive networks (especially Iranian ISPs like MCI Hamrah Avval, Irancell, Mokhaberat, Shatel, Rightel).
+
+CURRENT PANEL STATUS INSPECTION:
+${panelContext ? JSON.stringify(panelContext, null, 2) : 'No panel state provided'}
+
+CRITICAL INSTRUCTIONS FOR ACTION PROPOSALS:
+If the user asks you to apply a change, set fragment rules, update clean IPs, generate a new UUID, or deploy/sync to Cloudflare Edge, you MUST include a JSON action proposal block AT THE END of your Persian response in this EXACT format:
+
+ACTION_PROPOSAL: {
+  "type": "apply_fragment" | "add_clean_ips" | "regen_uuid" | "sync_cf_worker" | "navigate_tab",
+  "titleFa": "توضیح شفاف تغییر پیشنهادی به فارسی",
+  "titleEn": "Action title in English",
+  "data": {
+    "preset": "mci" | "irancell" | "mokhaberat" | "shatel" | "custom",
+    "cleanIps": ["104.16.51.111", "icook.hk"],
+    "tab": "sub" | "clean-ip" | "generator" | "deploy"
+  }
+}
+
+Respond in fluent Persian (فارسی) clearly with step-by-step optimization recommendations. Keep it friendly, direct, and conversational.`;
 
       if (apiKey) {
         try {
           const ai = new GoogleGenAI({ apiKey });
-          const systemInstruction = `You are Nova Proxy Ultra AI Network Engineer & Anti-Censorship Advisor.
-You specialize in Cloudflare Edge VLESS / VMESS Workers, Fragment parameters (length, interval, packets), SNI spoofing, clean IP optimization, and client routing for restrictive networks (especially Iranian ISPs like MCI Hamrah Avval, Irancell, Mokhaberat, Shatel, Rightel).
-Respond in Persian (فارسی) clearly with step-by-step optimization recommendations, custom Fragment settings, recommended ports, and Sing-Box / Clash snippets if requested. Keep it concise, professional, and practical.`;
+
+          let historyText = '';
+          if (Array.isArray(messages) && messages.length > 0) {
+            historyText = messages
+              .map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+              .join('\n');
+          }
+
+          const userPrompt = prompt || (messages && messages.length > 0 ? messages[messages.length - 1].text : 'بهترین تنظیمات شبکه');
+
+          const contents = historyText
+            ? `گفتگوهای قبلی:\n${historyText}\n\nپیام جدید کاربر (${ispName || 'عمومی'}):\n${userPrompt}`
+            : `اپراتور منتخب: ${ispName || 'عمومی'}\nدرخواست کاربر: ${userPrompt}`;
 
           const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `اپراتور: ${ispName || 'عمومی'}\nدرخواست کاربر: ${prompt || 'بهترین تنظیمات فرگمنت و آیپی تمیز برای دور زدن اختلالات'}`,
+            contents,
             config: {
               systemInstruction,
               temperature: 0.7,
@@ -684,57 +716,77 @@ Respond in Persian (فارسی) clearly with step-by-step optimization recommend
       }
 
       // Offline / Fallback Nova AI Expert Engine
-      const p = (prompt || '').toLowerCase();
+      const p = (prompt || (messages && messages.length > 0 ? messages[messages.length - 1].text : '') || '').toLowerCase();
       const isp = ispName || 'عمومی';
 
       let advice = '';
 
-      if (p.includes('فرگمنت') || p.includes('fragment') || isp.includes('MCI') || isp.includes('همراه اول')) {
-        advice = `🤖 **توصیه سیستم هوشمند Nova AI برای اپراتور ${isp}:**
+      if (p.includes('فرگمنت') || p.includes('fragment') || p.includes('همراه اول') || isp.includes('MCI')) {
+        advice = `🤖 **توصیه دستیار هوشمند Nova AI برای اپراتور ${isp}:**
 
-۱. **تنظیمات فرگمنت پیشنهادی (Fragment Parameters):**
-   - **طول پک‌ها (Length):** \`10-20\` یا \`100-200\` (بهترین جواب روی اختلالات همراه اول)
-   - **فاصله زمانی (Interval):** \`10-20ms\`
-   - **تعداد پکت (Packets):** \`tlshello\` یا \`1-3\`
+۱. **تنظیمات فرگمنت پیشنهادی:**
+   - **طول پک‌ها:** \`10-20\` (بهترین جواب روی همراه اول)
+   - **فاصله زمانی:** \`10-20ms\`
+   - **تعداد پکت:** \`tlshello\`
 
 ۲. **آی‌پی‌های تمیز پیشنهادی:**
    - \`104.16.51.111\`
    - \`162.159.137.85\`
-   - \`172.67.182.201\`
+   - \`icook.hk\`
 
-۳. **پورت‌های پیشنهادی:**
-   - HTTPS: \`443\`, \`2053\`, \`8443\`
-   - HTTP: \`80\`, \`8080\`
+می‌توانید با زدن دکمه زیر، تنظیمات فرگمنت همراه اول را به صورت مستقیم روی تمام نودهای پنل اعمال کنید:
 
-💡 **نکته طلایی:** روی اپراتور همراه اول فعال‌سازی فرگمنت در نرم‌افزارهای v2rayNG (بخش Settings -> Fragment) یا Hiddify/Sing-box اختلالات SNI Blocking را کاملاً رفع می‌کند.`;
-      } else if (isp.includes('Irancell') || isp.includes('ایرانسل') || p.includes('افت') || p.includes('قطعی')) {
-        advice = `🤖 **تحلیل و راهکار هوشمند Nova AI برای شبکه ${isp}:**
+ACTION_PROPOSAL: {
+  "type": "apply_fragment",
+  "titleFa": "اعمال پارامترهای فرگمنت همراه اول روی تمام کانفیگ‌های پنل",
+  "titleEn": "Apply MCI Fragment Preset to all Panel Nodes",
+  "data": { "preset": "mci", "length": "10-20", "interval": "10-20", "packets": "tlshello" }
+}`;
+      } else if (p.includes('ایرانسل') || isp.includes('Irancell') || p.includes('قطع') || p.includes('افت')) {
+        advice = `🤖 **راهکار هوشمند Nova AI برای شبکه ${isp}:**
 
-۱. **استفاده از آی‌پی تمیز اختصاصی ایرانسل:**
-   - آی‌پی \`104.19.241.93\` و \`172.67.74.155\` پینگ زیر ۱۱۰ میلی‌ثانیه دارند.
-   - دامنه تمیز \`icook.hk\` نیز پینگ بسیار باثباتی روی ایرانسل ارائه می‌دهد.
+۱. **آی‌پی و دامنه‌های تمیز ایرانسل:**
+   - آی‌پی \`104.19.241.93\` و دامنه \`icook.hk\` بالاترین سرعت را دارند.
 
-۲. **تنظیمات پورت و TLS:**
-   - پورت \`2053\` یا \`2083\` معمولاً روی ایرانسل سرعت بالاتری نسبت به ۴۴۳ دارد.
-   - مقدار ALPN را روی \`h2,http/1.1\` تنظیم کنید.
+۲. **تنظیمات فرگمنت ایرانسل:**
+   - Length: \`100-200\` | Interval: \`5-10ms\` | Packets: \`1-3\`
 
-۳. **پارامتر فرگمنت ایرانسل:**
-   - Length: \`50-100\`
-   - Interval: \`15-30\`
-   - Packets: \`tlshello\``;
+برای اعمال این آی‌پی‌ها و فرگمنت ایرانسل روی نودها، روی دکمه زیر کلیک کنید:
+
+ACTION_PROPOSAL: {
+  "type": "apply_fragment",
+  "titleFa": "اعمال تنظیمات اختصاصی ایرانسل و فرگمنت پیشرفته",
+  "titleEn": "Apply Irancell Optimization & Fragment Preset",
+  "data": { "preset": "irancell", "length": "100-200", "interval": "5-10", "packets": "1-3" }
+}`;
+      } else if (p.includes('آپدیت ورکر') || p.includes('کلاودفلر') || p.includes('deploy') || p.includes('sync')) {
+        advice = `🤖 **همگام‌سازی و آپدیت ورکر کلاودفلر:**
+
+کد ورکر شما آماده ارسال مجدد به لبه شبکه کلاودفلر است. در صورت تایید، آخرین تغییرات آی‌پی و فرگمنت مستقیماً روی ورکر آپدیت می‌شوند.
+
+ACTION_PROPOSAL: {
+  "type": "sync_cf_worker",
+  "titleFa": "همگام‌سازی و انتشار اتوماتیک کد ورکر روی کلاودفلر",
+  "titleEn": "Deploy & Sync Updated Worker Script to Cloudflare Edge",
+  "data": {}
+}`;
+      } else if (p.includes('uuid') || p.includes('امنیت') || p.includes('کلید')) {
+        advice = `🤖 **تولید کلید امنیتی جدید (UUID Generator):**
+
+برای افزایش امنیت یا بازنشانی دسترسی کاربران، می‌توانید یک UUID جدید اختصاص دهید:
+
+ACTION_PROPOSAL: {
+  "type": "regen_uuid",
+  "titleFa": "تولید و جایگزینی UUID جدید برای تمام نودهای پنل",
+  "titleEn": "Generate & Apply New UUID Security Key",
+  "data": {}
+}`;
       } else {
-        advice = `🤖 **پاسخ دستیار شبکه‌ای Nova AI (بهینه‌ساز پروکسی لبه):**
+        advice = `🤖 **دستیار هوشمند شبکه Nova Proxy Ultra:**
 
-برای بهینه‌سازی کانفیگ و دستیابی به بالاترین سرعت روی اپراتور **${isp}**:
+در حال حاضر شما **${panelContext?.nodesCount || 3} نود فعال** و **${panelContext?.cleanIpsCount || 3} آی‌پی تمیز** دارید.
 
-۱. **انتخاب آی‌پی تمیز (Clean IP):**
-   - به زبانه **«اسکنر آی‌پی تمیز»** مراجعه کرده و دکمه **شروع اسکن زنده** را بزنید تا بهترین آی‌پی‌های فعال اپراتور شما با پینگ زیر ۱۵۰ms انتخاب شوند.
-
-۲. **تنظیم فرگمنت (Fragment):**
-   - جهت دور زدن فیلترینگ SNI، فرگمنت را روی \`Length: 10-20\` و \`Interval: 10-20ms\` تنظیم کنید.
-
-۳. **دکمه استقرار مجدد:**
-   - در صورت تغییر آی‌پی یا UUID، در زبانه «استقرار کلاودفلر» با یک کلیک وورکر خود را بروزرسانی کنید.`;
+آیا می‌خواهید بهترین آی‌پی‌های تمیز را به نودها اضافه کنم یا تنظیمات فرگمنت اپراتور خاصی را اعمال کنم؟ کافیست درخواست خود را بنویسید یا یکی از دکمه‌های سریع را انتخاب کنید.`;
       }
 
       return res.json({ advice });
