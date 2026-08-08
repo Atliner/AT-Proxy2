@@ -254,7 +254,7 @@ export default function App() {
                     }))
                   );
                   setNodes((prev) => [...createdBatch, ...prev]);
-                  setActiveTab('sub');
+                  // Do NOT force redirect to 'sub' tab - stay in Clean IP Scanner view
                 }}
               />
             )}

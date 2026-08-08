@@ -204,39 +204,40 @@ If user asks to change settings, append ACTION_PROPOSAL: {"type": "apply_fragmen
 
     // 3. Third Attempt: Public Free Keyless Endpoint (Pollinations AI)
     try {
-      const pollPrompt = `System: You are Nova Proxy AI Network Engineer. Respond in Persian.
-Panel Status: Nodes=${panelContext.nodesCount}, Deployed=${panelContext.isDeployed}.
-If user asks to set fragment for MCI, append:
-ACTION_PROPOSAL: {"type": "apply_fragment", "titleFa": "اعمال فرگمنت همراه اول", "data": {"preset": "mci", "length": "10-20", "interval": "10-20", "packets": "tlshello"}}
-If user asks for Irancell, append:
-ACTION_PROPOSAL: {"type": "apply_fragment", "titleFa": "اعمال فرگمنت ایرانسل", "data": {"preset": "irancell", "length": "100-200", "interval": "5-10", "packets": "1-3"}}
-If user asks for UUID, append:
-ACTION_PROPOSAL: {"type": "regen_uuid", "titleFa": "تولید UUID جدید", "data": {}}
-If user asks for Sync/Deploy, append:
-ACTION_PROPOSAL: {"type": "sync_cf_worker", "titleFa": "انتشار مجدد روی کلاودفلر", "data": {}}
+      const pollPrompt = `System: You are Nova Proxy AI Network Engineer. Respond in Persian. Panel Context: Nodes=${panelContext.nodesCount}.
+If user asks for MCI fragment, append: ACTION_PROPOSAL: {"type": "apply_fragment", "titleFa": "اعمال فرگمنت همراه اول", "data": {"preset": "mci", "length": "10-20", "interval": "10-20", "packets": "tlshello"}}
+If user asks for Irancell, append: ACTION_PROPOSAL: {"type": "apply_fragment", "titleFa": "اعمال فرگمنت ایرانسل", "data": {"preset": "irancell", "length": "100-200", "interval": "5-10", "packets": "1-3"}}
+If user asks for UUID, append: ACTION_PROPOSAL: {"type": "regen_uuid", "titleFa": "تولید UUID جدید", "data": {}}
+If user asks for Sync/Deploy, append: ACTION_PROPOSAL: {"type": "sync_cf_worker", "titleFa": "انتشار مجدد روی کلاودفلر", "data": {}}
 
 User question (${ispName}): ${newPrompt}`;
 
-      const pollResp = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: pollPrompt }],
-          model: 'openai',
-          seed: Math.floor(Math.random() * 1000),
-        }),
-      });
+      const encodedUrl = `https://text.pollinations.ai/${encodeURIComponent(pollPrompt)}?model=openai&seed=${Math.floor(Math.random() * 1000)}`;
+      const pollResp = await fetch(encodedUrl);
 
       if (pollResp.ok) {
         const text = await pollResp.text();
-        if (text && text.length > 10) return text;
+        if (text && text.length > 5 && !text.includes('404 Not Found')) return text;
       }
     } catch (e) {
       console.warn('Public keyless AI call failed, using client rule engine:', e);
     }
 
     // 4. Final Client Rule Engine Fallback
-    const p = newPrompt.toLowerCase();
+    const p = newPrompt.toLowerCase().trim();
+
+    if (p.includes('سلام') || p.includes('درود') || p.includes('چطوری') || p.includes('خوبی') || p.includes('هستی') || p === 'hi' || p === 'hello') {
+      return `سلام! 👋 من **دستیار هوشمند شبکه و کنترل‌کننده لبه Nova Proxy** هستم.
+
+در حال حاضر **${panelContext.nodesCount} نود فعال** روی سیستم شما تنظیم شده است.
+
+چطور می‌تونم امروز در بهینه‌سازی شبکه‌تون کمکتون کنم؟
+• بهینه‌سازی فرگمنت همراه اول، ایرانسل یا مخابرات
+• ساخت کلید امنیتی جدید (UUID Generator)
+• همگام‌سازی و انتشار کد ورکر روی کلاودفلر
+• تنظیم آی‌پی‌ها و دامنه‌های تمیز (Clean SNI)`;
+    }
+
     if (p.includes('فرگمنت') || p.includes('همراه اول') || p.includes('mci')) {
       return `🤖 **تحلیل و راهکار پیشرفته Nova AI برای همراه اول:**
 

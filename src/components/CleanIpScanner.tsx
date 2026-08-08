@@ -22,6 +22,7 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   const [poolTypeFilter, setPoolTypeFilter] = useState<'all' | 'domain' | 'ip'>('all');
 
   const [scanning, setScanning] = useState(false);
+  const [scanningPool, setScanningPool] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [newIp, setNewIp] = useState('');
   const [newIsp, setNewIsp] = useState('Hamrah Avval (MCI)');
@@ -263,6 +264,64 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     setCommunityPool(finalPool);
     saveLocalCommunityPool(finalPool);
     setPoolLoading(false);
+  };
+
+  // Dedicated Scan & Ping Re-test for items inside Community Pool
+  const handleScanPool = async () => {
+    if (communityPool.length === 0) return;
+    setScanningPool(true);
+    setPoolSyncStatus(null);
+
+    const poolItems = [...communityPool];
+    let updatedCount = 0;
+
+    // Batch ping all pool items
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < poolItems.length; i += BATCH_SIZE) {
+      const batch = poolItems.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (item) => {
+          const res = await performPing(item.ip);
+          const idx = poolItems.findIndex((p) => p.ip.toLowerCase() === item.ip.toLowerCase());
+          if (idx !== -1) {
+            if (res.isOk) {
+              updatedCount++;
+              poolItems[idx] = {
+                ...poolItems[idx],
+                pingMs: res.pingMs,
+                status: 'ok',
+                verifiedCount: (poolItems[idx].verifiedCount || 0) + 1,
+              };
+            } else {
+              poolItems[idx] = {
+                ...poolItems[idx],
+                status: 'fail',
+              };
+            }
+          }
+        })
+      );
+    }
+
+    // Sort: Verified OK items first, ordered by highest verifiedCount then lowest ping
+    poolItems.sort((a, b) => {
+      if (a.status === 'ok' && b.status !== 'ok') return -1;
+      if (a.status !== 'ok' && b.status === 'ok') return 1;
+      if ((b.verifiedCount || 0) !== (a.verifiedCount || 0)) {
+        return (b.verifiedCount || 0) - (a.verifiedCount || 0);
+      }
+      return (a.pingMs || 999) - (b.pingMs || 999);
+    });
+
+    setCommunityPool(poolItems);
+    saveLocalCommunityPool(poolItems);
+    setScanningPool(false);
+
+    setPoolSyncStatus(
+      isFa
+        ? `✅ پینگ استخر انجام شد! ${updatedCount} مورد فعال شناسایی و تعداد تایید آنها +۱ افزایش یافت.`
+        : `✅ Pool scan complete! ${updatedCount} items verified (+1 count).`
+    );
   };
 
   useEffect(() => {
@@ -826,25 +885,6 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
                   <Trash2 className="w-3.5 h-3.5 text-rose-400" />
                   <span>{isFa ? '🧹 پاکسازی موارد بدون پاسخ' : 'Purge Timed Out'}</span>
                 </button>
-
-                {onExportCleanIpsToNodes && (
-                  <button
-                    onClick={() => {
-                      const workingItems = filteredList
-                        .filter((item) => item.status === 'ok' || item.pingMs !== null)
-                        .map((item) => item.ip);
-                      if (workingItems.length === 0) {
-                        alert(isFa ? 'لطفاً ابتدا اسکن را انجام دهید تا آدرس‌های سالم شناسایی شوند.' : 'Please run scan first.');
-                        return;
-                      }
-                      handleApplyPoolToNodes(workingItems);
-                    }}
-                    className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-medium transition flex items-center space-x-1.5 space-x-reverse"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>{isFa ? 'اعمال آدرس‌های سالم به کانفیگ‌ها' : 'Apply Clean Endpoints to Configs'}</span>
-                  </button>
-                )}
               </div>
             </div>
 
@@ -957,32 +997,30 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={handleRemoveFailedPoolItems}
-                className="py-2.5 px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium rounded-xl border border-rose-500/30 transition flex items-center space-x-1.5 space-x-reverse"
-                title="Purge failed/unresponsive pool items"
+                onClick={handleScanPool}
+                disabled={scanningPool || communityPool.length === 0}
+                className="py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/20 transition flex items-center space-x-2 space-x-reverse disabled:opacity-50"
               >
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                <span>{isFa ? '🧹 پاکسازی غیرفعال‌ها' : 'Purge Unresponsive'}</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${scanningPool ? 'animate-spin' : ''}`} />
+                <span>
+                  {scanningPool
+                    ? isFa
+                      ? 'در حال اسکن استخر...'
+                      : 'Scanning Pool...'
+                    : isFa
+                    ? '⚡ اسکن و تست مجدد استخر'
+                    : 'Scan & Re-test Pool'}
+                </span>
               </button>
 
               <button
                 onClick={fetchCommunityPool}
-                disabled={poolLoading}
+                disabled={poolLoading || scanningPool}
                 className="py-2.5 px-4 bg-white/5 hover:bg-white/10 text-white text-xs font-medium rounded-xl border border-white/10 transition flex items-center space-x-1.5 space-x-reverse"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${poolLoading ? 'animate-spin' : ''}`} />
-                <span>{isFa ? 'بروزرسانی استخر' : 'Refresh Pool'}</span>
+                <span>{isFa ? 'بروزرسانی لیست' : 'Refresh List'}</span>
               </button>
-
-              {onExportCleanIpsToNodes && communityPool.length > 0 && (
-                <button
-                  onClick={() => handleApplyPoolToNodes(filteredPool.map((p) => p.ip))}
-                  className="py-2.5 px-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/20 transition flex items-center space-x-1.5 space-x-reverse"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isFa ? 'اعمال تمام موارد استخر' : 'Apply Pool to Nodes'}</span>
-                </button>
-              )}
             </div>
           </div>
 

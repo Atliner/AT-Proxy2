@@ -716,51 +716,78 @@ Respond in fluent Persian (فارسی) clearly with step-by-step optimization re
       }
 
       // Offline / Fallback Nova AI Expert Engine
-      const p = (prompt || (messages && messages.length > 0 ? messages[messages.length - 1].text : '') || '').toLowerCase();
-      const isp = ispName || 'عمومی';
+      const p = (prompt || (messages && messages.length > 0 ? messages[messages.length - 1].text : '') || '').toLowerCase().trim();
+      const nodeCount = panelContext?.nodesCount || 0;
 
-      let advice = '';
+      // 1. Natural Persian Greeting
+      if (p.includes('سلام') || p.includes('درود') || p.includes('چطوری') || p.includes('خوبی') || p.includes('هستی') || p === 'hi' || p === 'hello') {
+        return res.json({
+          advice: `سلام! 👋 من **دستیار هوشمند شبکه و کنترل‌کننده لبه Nova Proxy** هستم.
 
-      if (p.includes('فرگمنت') || p.includes('fragment') || p.includes('همراه اول') || isp.includes('MCI')) {
-        advice = `🤖 **توصیه دستیار هوشمند Nova AI برای اپراتور ${isp}:**
+در حال حاضر **${nodeCount} نود فعال** روی سیستم شما تنظیم شده است.
 
-۱. **تنظیمات فرگمنت پیشنهادی:**
-   - **طول پک‌ها:** \`10-20\` (بهترین جواب روی همراه اول)
-   - **فاصله زمانی:** \`10-20ms\`
-   - **تعداد پکت:** \`tlshello\`
+چطور می‌تونم امروز در بهینه‌سازی شبکه‌تون کمکتون کنم؟
+• بهینه‌سازی پارامترهای فرگمنت همراه اول، ایرانسل یا مخابرات
+• ساخت کلید امنیتی جدید (UUID Generator)
+• همگام‌سازی و انتشار کد ورکر روی کلاودفلر
+• تنظیم آی‌پی‌ها و دامنه‌های تمیز (Clean SNI)`
+        });
+      }
 
-۲. **آی‌پی‌های تمیز پیشنهادی:**
-   - \`104.16.51.111\`
-   - \`162.159.137.85\`
-   - \`icook.hk\`
+      // 2. Fragment & MCI Optimization
+      if (p.includes('فرگمنت') || p.includes('fragment') || p.includes('همراه اول') || p.includes('mci')) {
+        return res.json({
+          advice: `🤖 **توصیه بهینه‌سازی دستیار هوشمند Nova AI برای همراه اول:**
 
-می‌توانید با زدن دکمه زیر، تنظیمات فرگمنت همراه اول را به صورت مستقیم روی تمام نودهای پنل اعمال کنید:
+برای رفع کامل اختلالات و SNI Blocking روی همراه اول، فرگمنت با طول **۱۰ تا ۲۰** و اینتروال **۱۰ms** بالاترین پایداری را ارائه می‌دهد.
+
+آیا مایلید این پارامترها را مستقیماً روی تمام کانفیگ‌های پنل اعمال کنم؟
 
 ACTION_PROPOSAL: {
   "type": "apply_fragment",
-  "titleFa": "اعمال پارامترهای فرگمنت همراه اول روی تمام کانفیگ‌های پنل",
-  "titleEn": "Apply MCI Fragment Preset to all Panel Nodes",
+  "titleFa": "اعمال پارامترهای فرگمنت همراه اول روی تمام نودها",
+  "titleEn": "Apply MCI Fragment Preset to Nodes",
   "data": { "preset": "mci", "length": "10-20", "interval": "10-20", "packets": "tlshello" }
-}`;
-      } else if (p.includes('ایرانسل') || isp.includes('Irancell') || p.includes('قطع') || p.includes('افت')) {
-        advice = `🤖 **راهکار هوشمند Nova AI برای شبکه ${isp}:**
+}`
+        });
+      }
 
-۱. **آی‌پی و دامنه‌های تمیز ایرانسل:**
-   - آی‌پی \`104.19.241.93\` و دامنه \`icook.hk\` بالاترین سرعت را دارند.
+      // 3. Irancell / Connection Drop Optimization
+      if (p.includes('ایرانسل') || p.includes('irancell') || p.includes('قطع') || p.includes('افت')) {
+        return res.json({
+          advice: `🤖 **راهکار بهینه‌سازی شبکه ایرانسل:**
 
-۲. **تنظیمات فرگمنت ایرانسل:**
-   - Length: \`100-200\` | Interval: \`5-10ms\` | Packets: \`1-3\`
-
-برای اعمال این آی‌پی‌ها و فرگمنت ایرانسل روی نودها، روی دکمه زیر کلیک کنید:
+روی شبکه ایرانسل ترکیب فرگمنت طولانی‌تر (100-200) به همراه دامنه‌های تمیز CDN مانند \`icook.hk\` بالاترین سرعت را ایفا می‌کند.
 
 ACTION_PROPOSAL: {
   "type": "apply_fragment",
-  "titleFa": "اعمال تنظیمات اختصاصی ایرانسل و فرگمنت پیشرفته",
-  "titleEn": "Apply Irancell Optimization & Fragment Preset",
+  "titleFa": "اعمال پارامترهای فرگمنت و آی‌پی تمیز ایرانسل",
+  "titleEn": "Apply Irancell Fragment Preset",
   "data": { "preset": "irancell", "length": "100-200", "interval": "5-10", "packets": "1-3" }
-}`;
-      } else if (p.includes('آپدیت ورکر') || p.includes('کلاودفلر') || p.includes('deploy') || p.includes('sync')) {
-        advice = `🤖 **همگام‌سازی و آپدیت ورکر کلاودفلر:**
+}`
+        });
+      }
+
+      // 4. UUID Security Key Generation
+      if (p.includes('uuid') || p.includes('کلید') || p.includes('امنیت')) {
+        return res.json({
+          advice: `🤖 **تولید کلید امنیتی جدید (UUID Generator):**
+
+ساخت UUID جدید باعث غیرفعال شدن کلیدهای قدیمی و افزایش پایداری امنیت اتصال شما می‌شود.
+
+ACTION_PROPOSAL: {
+  "type": "regen_uuid",
+  "titleFa": "تولید و جایگزینی UUID جدید برای تمام نودهای پنل",
+  "titleEn": "Generate & Apply New UUID Security Key",
+  "data": {}
+}`
+        });
+      }
+
+      // 5. Worker Sync & Deployment
+      if (p.includes('ورکر') || p.includes('کلاودفلر') || p.includes('آپدیت') || p.includes('deploy') || p.includes('sync')) {
+        return res.json({
+          advice: `🤖 **همگام‌سازی و آپدیت ورکر کلاودفلر:**
 
 کد ورکر شما آماده ارسال مجدد به لبه شبکه کلاودفلر است. در صورت تایید، آخرین تغییرات آی‌پی و فرگمنت مستقیماً روی ورکر آپدیت می‌شوند.
 
@@ -769,27 +796,18 @@ ACTION_PROPOSAL: {
   "titleFa": "همگام‌سازی و انتشار اتوماتیک کد ورکر روی کلاودفلر",
   "titleEn": "Deploy & Sync Updated Worker Script to Cloudflare Edge",
   "data": {}
-}`;
-      } else if (p.includes('uuid') || p.includes('امنیت') || p.includes('کلید')) {
-        advice = `🤖 **تولید کلید امنیتی جدید (UUID Generator):**
-
-برای افزایش امنیت یا بازنشانی دسترسی کاربران، می‌توانید یک UUID جدید اختصاص دهید:
-
-ACTION_PROPOSAL: {
-  "type": "regen_uuid",
-  "titleFa": "تولید و جایگزینی UUID جدید برای تمام نودهای پنل",
-  "titleEn": "Generate & Apply New UUID Security Key",
-  "data": {}
-}`;
-      } else {
-        advice = `🤖 **دستیار هوشمند شبکه Nova Proxy Ultra:**
-
-در حال حاضر شما **${panelContext?.nodesCount || 3} نود فعال** و **${panelContext?.cleanIpsCount || 3} آی‌پی تمیز** دارید.
-
-آیا می‌خواهید بهترین آی‌پی‌های تمیز را به نودها اضافه کنم یا تنظیمات فرگمنت اپراتور خاصی را اعمال کنم؟ کافیست درخواست خود را بنویسید یا یکی از دکمه‌های سریع را انتخاب کنید.`;
+}`
+        });
       }
 
-      return res.json({ advice });
+      // 6. Generic Fallback Response
+      return res.json({
+        advice: `🤖 **دستیار تعاملی شبکه‌ای Nova AI:**
+
+من پاسخگوی سوالات شما درباره بهینه‌سازی VLESS، تنظیم فرگمنت، آی‌پی‌های تمیز و اتصال به کلاودفلر هستم.
+
+در حال حاضر **${nodeCount} نود فعال** در پنل شما ثبت شده است. می‌توانم هر یک از دستورات فوق را مستقیماً روی پنل شما اجرا کنم.`
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'AI generation failed' });
     }
