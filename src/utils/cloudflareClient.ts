@@ -382,3 +382,92 @@ export async function deployCloudflareWorker(params: DeployWorkerParams): Promis
     };
   }
 }
+
+export interface SyncWorkerOptions {
+  token?: string;
+  accountId?: string;
+  workerName?: string;
+  cleanIps?: string[];
+  proxyIp?: string;
+  uuid?: string;
+}
+
+export async function autoSyncWorkerToCloudflare(options?: SyncWorkerOptions): Promise<{ success: boolean; error?: string; workerUrl?: string }> {
+  const token = options?.token || localStorage.getItem('nova_cf_token') || '';
+  let accountId = options?.accountId || localStorage.getItem('nova_cf_account_id') || '';
+  const workerName = options?.workerName || localStorage.getItem('nova_cf_worker_name') || 'nova-edge-worker';
+  const uuid = options?.uuid || localStorage.getItem('nova_cf_uuid') || 'e04313f8-4e1d-4001-9032-15f5c88bb712';
+  const proxyIp = options?.proxyIp || localStorage.getItem('nova_cf_proxy_ip') || '104.16.51.111';
+  
+  let cleanIps = options?.cleanIps;
+  if (!cleanIps || cleanIps.length === 0) {
+    try {
+      const savedIps = localStorage.getItem('nova_cf_clean_ips');
+      if (savedIps) {
+        cleanIps = JSON.parse(savedIps);
+      }
+    } catch (e) {
+      console.warn('Failed to parse clean IPs from localStorage', e);
+    }
+  }
+  if (!cleanIps || cleanIps.length === 0) {
+    cleanIps = ['104.16.51.111', '104.19.241.93', '162.159.137.85', 'icook.hk'];
+  }
+
+  if (!token) {
+    return { success: false, error: 'توکن API کلاودفلر یافت نشد. لطفاً ابتدا در تب استقرار کلاودفلر توکن را وارد کنید.' };
+  }
+
+  if (!accountId) {
+    const verifyRes = await verifyCloudflareToken(token);
+    if (verifyRes.success && verifyRes.accounts && verifyRes.accounts.length > 0) {
+      accountId = verifyRes.accounts[0].id;
+      try {
+        localStorage.setItem('nova_cf_account_id', accountId);
+      } catch (e) {
+        console.warn(e);
+      }
+    } else {
+      return { success: false, error: verifyRes.error || 'شناسه حساب کلاودفلر استخراج نشد.' };
+    }
+  }
+
+  const subPathStr = `/sub-${uuid.substring(0, 6)}`;
+  const workerConfig: WorkerScriptConfig = {
+    uuid,
+    proxyIPs: [proxyIp],
+    cleanIPs: cleanIps,
+    subPath: subPathStr,
+    subTitle: `Nova Edge Node - ${workerName}`,
+    enableFragment: true,
+    fragmentLength: '10-20',
+    fragmentInterval: '10-20',
+    enableVless: true,
+    enableVmess: true,
+    enableTrojan: false,
+    customSNIs: ['speedtest.net', 'zula.ir'],
+  };
+
+  const res = await deployCloudflareWorker({
+    apiToken: token,
+    accountId,
+    workerName,
+    createKv: true,
+    workerConfig,
+  });
+
+  if (res.success && res.workerUrl) {
+    try {
+      localStorage.setItem('nova_cf_is_deployed', 'true');
+      localStorage.setItem('nova_cf_worker_url', res.workerUrl);
+      localStorage.setItem('nova_cf_clean_ips', JSON.stringify(cleanIps));
+      localStorage.setItem('nova_cf_uuid', uuid);
+      localStorage.setItem('nova_cf_proxy_ip', proxyIp);
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+  }
+
+  return res;
+}
+

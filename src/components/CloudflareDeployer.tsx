@@ -304,11 +304,15 @@ export const CloudflareDeployer: React.FC<CloudflareDeployerProps> = ({
 
       try {
         localStorage.setItem('nova_cf_token', apiToken.trim());
+        if (accId) localStorage.setItem('nova_cf_account_id', accId);
         localStorage.setItem('nova_cf_is_deployed', 'true');
         localStorage.setItem('nova_cf_worker_url', deployRes.workerUrl);
         localStorage.setItem('nova_cf_sub_url', finalSubUrl);
         localStorage.setItem('nova_cf_worker_name', targetWorkerName);
         localStorage.setItem('nova_cf_nodes', JSON.stringify(generatedNodes));
+        localStorage.setItem('nova_cf_clean_ips', JSON.stringify(cleanIpsArr));
+        localStorage.setItem('nova_cf_uuid', uuid);
+        localStorage.setItem('nova_cf_proxy_ip', proxyIp);
       } catch (e) {
         console.error('Failed to save deploy session to localStorage', e);
       }

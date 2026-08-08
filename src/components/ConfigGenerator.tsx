@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Zap, Plus, Copy, QrCode, Trash2, Check, RefreshCw, Layers, Shield, Settings2, Sparkles, Filter, Database, Globe } from 'lucide-react';
+import { Zap, Plus, Copy, QrCode, Trash2, Check, RefreshCw, Layers, Shield, Settings2, Sparkles, Filter, Database, Globe, Cloud } from 'lucide-react';
 import { Language, ProxyNode, FragmentConfig } from '../types';
 import { generateVlessUri, generateVmessUri, generateTrojanUri, generateNodeUri, generateRandomUuid, generateMultiNodesBatch } from '../utils/configParsers';
 import { INITIAL_CLEAN_IPS, POPULAR_PROXY_IPS, CF_HTTPS_PORTS, CF_HTTP_PORTS } from '../data/cleanIps';
+import { autoSyncWorkerToCloudflare } from '../utils/cloudflareClient';
 
 interface ConfigGeneratorProps {
   lang: Language;
@@ -42,7 +43,40 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [loadingPoolGen, setLoadingPoolGen] = useState(false);
+  const [syncingCf, setSyncingCf] = useState(false);
   const [poolGenMessage, setPoolGenMessage] = useState<string | null>(null);
+
+  const handleSyncToCloudflare = async () => {
+    setSyncingCf(true);
+    setPoolGenMessage(null);
+    const uniqueCleanIps = Array.from(new Set(nodes.map((n) => n.address))) as string[];
+
+    try {
+      const res = await autoSyncWorkerToCloudflare({
+        uuid,
+        proxyIp,
+        cleanIps: uniqueCleanIps.length > 0 ? uniqueCleanIps : undefined,
+      });
+
+      if (res.success) {
+        setPoolGenMessage(
+          isFa
+            ? '🚀 کد ورکر با موفقیت و به صورت اتوماتیک مستقیماً روی حساب کلاودفلر شما آپدیت شد! (بدون نیاز به دستکاری دستی)'
+            : '🚀 Worker script successfully updated on Cloudflare via API!'
+        );
+      } else {
+        setPoolGenMessage(
+          isFa
+            ? `⚠️ خطا در بروزرسانی اتوماتیک کلاودفلر: ${res.error}`
+            : `⚠️ Cloudflare sync error: ${res.error}`
+        );
+      }
+    } catch (err: any) {
+      setPoolGenMessage(err.message || 'Error syncing to Cloudflare');
+    } finally {
+      setSyncingCf(false);
+    }
+  };
 
   // Apply ISP fragment preset
   const handleApplyPreset = (preset: 'mci' | 'irancell' | 'mokhaberat' | 'shatel' | 'custom') => {
@@ -281,6 +315,20 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleSyncToCloudflare}
+              disabled={syncingCf}
+              className="py-3 px-5 border border-emerald-500/50 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/40 hover:to-teal-600/40 text-emerald-300 font-bold text-xs rounded-2xl transition flex items-center space-x-2 space-x-reverse whitespace-nowrap shadow-lg shadow-emerald-600/10 disabled:opacity-50"
+              title="Auto-deploy updated worker script to Cloudflare Edge"
+            >
+              <Zap className={`w-4 h-4 text-emerald-400 ${syncingCf ? 'animate-spin' : ''}`} />
+              <span>
+                {syncingCf
+                  ? (isFa ? 'در حال همگام‌سازی ورکر...' : 'Syncing Cloudflare...')
+                  : (isFa ? '⚡ همگام‌سازی اتوماتیک کد ورکر در کلاودفلر' : 'Sync Worker to Cloudflare')}
+              </span>
+            </button>
+
             <button
               onClick={handleGenerateFromPool}
               disabled={loadingPoolGen}

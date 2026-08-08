@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Cpu, Copy, Download, Check, RefreshCw, FileCode, Play, Zap } from 'lucide-react';
+import { Cpu, Copy, Download, Check, RefreshCw, FileCode, Play, Zap, Cloud, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Language, WorkerScriptConfig } from '../types';
 import { generateWorkerScript } from '../data/workerTemplate';
+import { autoSyncWorkerToCloudflare } from '../utils/cloudflareClient';
 
 interface WorkerCodeEditorProps {
   lang: Language;
@@ -10,12 +11,23 @@ interface WorkerCodeEditorProps {
 export const WorkerCodeEditor: React.FC<WorkerCodeEditorProps> = ({ lang }) => {
   const isFa = lang === 'fa';
 
-  const [uuid, setUuid] = useState('0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d');
-  const [proxyIp, setProxyIp] = useState('104.16.51.111');
-  const [cleanIpText, setCleanIpText] = useState('104.16.51.111\n104.19.241.93\nicook.hk');
+  const [uuid, setUuid] = useState(() => localStorage.getItem('nova_cf_uuid') || '0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d');
+  const [proxyIp, setProxyIp] = useState(() => localStorage.getItem('nova_cf_proxy_ip') || '104.16.51.111');
+  const [cleanIpText, setCleanIpText] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nova_cf_clean_ips');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr) && arr.length > 0) return arr.join('\n');
+      }
+    } catch (e) {}
+    return '104.16.51.111\n104.19.241.93\nicook.hk';
+  });
   const [subPath, setSubPath] = useState('/sub-secret');
 
   const [copied, setCopied] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const scriptConfig: WorkerScriptConfig = {
     uuid,
@@ -50,6 +62,42 @@ export const WorkerCodeEditor: React.FC<WorkerCodeEditorProps> = ({ lang }) => {
     URL.revokeObjectURL(url);
   };
 
+  const handleAutoDeployToCloudflare = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+
+    const cleanIpsArr = cleanIpText.split('\n').map((s) => s.trim()).filter(Boolean);
+
+    try {
+      const res = await autoSyncWorkerToCloudflare({
+        uuid,
+        proxyIp,
+        cleanIps: cleanIpsArr,
+      });
+
+      if (res.success) {
+        setSyncMessage({
+          type: 'success',
+          text: isFa
+            ? '🚀 کد ورکر با موفقیت مستقیماً روی حساب کلاودفلر شما آپدیت شد! تغییرات در کل لبه به صورت آنی اعمال گردید.'
+            : '🚀 Worker code successfully deployed and updated directly on Cloudflare Edge!',
+        });
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: res.error || (isFa ? 'خطا در بروزرسانی ورکر' : 'Failed to update worker'),
+        });
+      }
+    } catch (err: any) {
+      setSyncMessage({
+        type: 'error',
+        text: err.message || (isFa ? 'خطای ناشناخته در ارتباط با کلاودفلر' : 'Cloudflare API sync error'),
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -58,33 +106,55 @@ export const WorkerCodeEditor: React.FC<WorkerCodeEditorProps> = ({ lang }) => {
           <div>
             <h3 className="text-lg font-light text-white flex items-center space-x-2 space-x-reverse">
               <Cpu className="w-5 h-5 text-blue-400" />
-              <span>{isFa ? 'کد کامل سورس کلاودفلر وورکر (Cloudflare Worker Script)' : 'Worker Source Code Editor'}</span>
+              <span>{isFa ? 'کد سورس ورکر کلاودفلر و همگام‌سازی اتوماتیک API' : 'Worker Source Code & Auto API Deploy'}</span>
             </h3>
             <p className="text-xs text-white/40 mt-1">
               {isFa
-                ? 'مشاهده و دانلود سورس استاندارد جاوااسکریپت VLESS 0-RTT جهت قرار دادن دستی در داشبورد Cloudflare'
-                : 'View, edit & download VLESS WS 0-RTT Cloudflare Worker JavaScript code'}
+                ? 'با استفاده از توکن API کلاودفلر، کد زیر بدون نیاز به کپی و پیست دستی، به صورت خودکار روی ورکر شما ارسال و آپدیت می‌شود.'
+                : 'Automatically publish & update your Cloudflare Worker script via API Token without manual copy-pasting.'}
             </p>
           </div>
 
-          <div className="flex items-center space-x-2 space-x-reverse">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleAutoDeployToCloudflare}
+              disabled={syncing}
+              className="py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/20 transition flex items-center space-x-2 space-x-reverse disabled:opacity-50"
+            >
+              <Zap className={`w-4 h-4 text-cyan-300 ${syncing ? 'animate-spin' : ''}`} />
+              <span>{syncing ? (isFa ? 'در حال ارسال و آپدیت...' : 'Deploying to Cloudflare...') : (isFa ? '⚡ آپدیت مستقیم کد روی ورکر کلاودفلر' : '⚡ Auto-Deploy Code to Cloudflare')}</span>
+            </button>
+
             <button
               onClick={handleCopy}
-              className="py-2.5 px-4 bg-white/5 hover:bg-white/10 text-white font-mono text-xs uppercase tracking-wider rounded-xl transition flex items-center space-x-1.5 space-x-reverse border border-white/10"
+              className="py-2.5 px-3.5 bg-white/5 hover:bg-white/10 text-white font-mono text-xs rounded-xl transition flex items-center space-x-1.5 space-x-reverse border border-white/10"
             >
               {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? (isFa ? 'کپی شد!' : 'Copied!') : (isFa ? 'کپی سورس کد' : 'Copy JS Code')}</span>
+              <span>{copied ? (isFa ? 'کپی شد!' : 'Copied!') : (isFa ? 'کپی کد' : 'Copy')}</span>
             </button>
 
             <button
               onClick={handleDownload}
-              className="py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs uppercase tracking-wider rounded-xl transition flex items-center space-x-1.5 space-x-reverse"
+              className="py-2.5 px-3.5 bg-white/5 hover:bg-white/10 text-white font-mono text-xs rounded-xl transition flex items-center space-x-1.5 space-x-reverse border border-white/10"
             >
               <Download className="w-4 h-4" />
-              <span>{isFa ? 'دانلود nova-worker.js' : 'Download worker.js'}</span>
+              <span>{isFa ? 'دانلود' : 'Download'}</span>
             </button>
           </div>
         </div>
+
+        {syncMessage && (
+          <div
+            className={`p-4 rounded-2xl text-xs font-medium flex items-center space-x-2 space-x-reverse ${
+              syncMessage.type === 'success'
+                ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {syncMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+            <span>{syncMessage.text}</span>
+          </div>
+        )}
 
         {/* Quick parameters editor */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 text-xs">
@@ -131,3 +201,4 @@ export const WorkerCodeEditor: React.FC<WorkerCodeEditorProps> = ({ lang }) => {
     </div>
   );
 };
+

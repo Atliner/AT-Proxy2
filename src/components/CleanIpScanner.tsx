@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Network, RefreshCw, CheckCircle2, Plus, Zap, Filter, ShieldCheck, ArrowUpRight, Globe, Sparkles, Database, Send, Radio, Trash2 } from 'lucide-react';
 import { Language, CleanIpItem } from '../types';
 import { INITIAL_CLEAN_IPS, ISP_PRESETS } from '../data/cleanIps';
+import { autoSyncWorkerToCloudflare } from '../utils/cloudflareClient';
 
 interface CleanIpScannerProps {
   lang: Language;
@@ -451,14 +452,38 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     setNewIp('');
   };
 
-  const handleApplyPoolToNodes = (ipsToApply: string[]) => {
+  const handleApplyPoolToNodes = async (ipsToApply: string[]) => {
     if (onExportCleanIpsToNodes && ipsToApply.length > 0) {
       onExportCleanIpsToNodes(ipsToApply);
-      alert(
-        isFa
-          ? `تعداد ${ipsToApply.length} آدرس آی‌پی/دامنه تمیز با موفقیت به تمام نودهای وورکر اضافه گردید!`
-          : `Added ${ipsToApply.length} clean endpoints to worker node configurations!`
-      );
+
+      const hasToken = !!localStorage.getItem('nova_cf_token');
+      if (hasToken) {
+        setPoolSyncStatus(isFa ? 'در حال بروزرسانی اتوماتیک کد ورکر روی کلاودفلر...' : 'Auto-updating Cloudflare Worker code...');
+        try {
+          const syncRes = await autoSyncWorkerToCloudflare({ cleanIps: ipsToApply });
+          if (syncRes.success) {
+            setPoolSyncStatus(
+              isFa
+                ? `⚡ تعداد ${ipsToApply.length} آی‌پی/دامنه تمیز با موفقیت روی کد ورکر کلاودفلر همگام‌سازی و آپدیت گردید!`
+                : `⚡ Successfully updated Cloudflare Worker script with ${ipsToApply.length} fresh clean endpoints!`
+            );
+          } else {
+            setPoolSyncStatus(
+              isFa
+                ? `تعداد ${ipsToApply.length} مورد اضافه شد. (خطا در بروزرسانی اتوماتیک کلاودفلر: ${syncRes.error})`
+                : `Added ${ipsToApply.length} items to nodes. (Cloudflare sync note: ${syncRes.error})`
+            );
+          }
+        } catch (e: any) {
+          console.error(e);
+        }
+      } else {
+        alert(
+          isFa
+            ? `تعداد ${ipsToApply.length} آدرس آی‌پی/دامنه تمیز با موفقیت به تمام نودهای وورکر اضافه گردید!`
+            : `Added ${ipsToApply.length} clean endpoints to worker node configurations!`
+        );
+      }
     }
   };
 
