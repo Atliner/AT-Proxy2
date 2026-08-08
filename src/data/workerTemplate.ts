@@ -340,18 +340,18 @@ function handleSub(request, url, userUuid, cleanIps) {
     return 'vless://' + userUuid + '@' + cleanIp + ':443?encryption=none&security=tls&type=ws&host=' + host + '&sni=' + sniVal + '&fp=chrome&path=%2Fvless-ws%3Fed%3D2048#' + encodeURIComponent(name);
   });
 
-  const rawSubContent = nodes.join('\n');
+  const rawSubContent = nodes.join('\\n');
 
   if (format === 'clash' || userAgent.includes('clash') || userAgent.includes('mihomo')) {
-    const clashYaml = 'port: 7890\nsocks-port: 7891\nallow-lan: true\nmode: Rule\nlog-level: info\nproxies:\n' +
+    const clashYaml = 'port: 7890\\nsocks-port: 7891\\nallow-lan: true\\nmode: Rule\\nlog-level: info\\nproxies:\\n' +
       cleanIps.map((cleanIp, i) => {
         const isDomain = cleanIp.includes('.') && !cleanIp.match(/^\d+\.\d+\.\d+\.\d+$/);
         const sniVal = isDomain ? cleanIp : host;
-        return '  - name: "Nova-VLESS-' + (i + 1) + '"\n    type: vless\n    server: ' + cleanIp + '\n    port: 443\n    uuid: ' + userUuid + '\n    udp: true\n    tls: true\n    servername: ' + sniVal + '\n    network: ws\n    ws-opts:\n      path: "/vless-ws?ed=2048"\n      headers:\n        Host: ' + host;
-      }).join('\n') +
-      '\nproxy-groups:\n  - name: "Nova-Proxy-Auto"\n    type: url-test\n    url: "http://www.gstatic.com/generate_204"\n    interval: 300\n    proxies:\n' +
-      cleanIps.map((_, i) => '      - "Nova-VLESS-' + (i + 1) + '"').join('\n') +
-      '\nrules:\n  - GEOIP,IR,DIRECT\n  - MATCH,Nova-Proxy-Auto';
+        return '  - name: "Nova-VLESS-' + (i + 1) + '"\\n    type: vless\\n    server: ' + cleanIp + '\\n    port: 443\\n    uuid: ' + userUuid + '\\n    udp: true\\n    tls: true\\n    servername: ' + sniVal + '\\n    network: ws\\n    ws-opts:\\n      path: "/vless-ws?ed=2048"\\n      headers:\\n        Host: ' + host;
+      }).join('\\n') +
+      '\\nproxy-groups:\\n  - name: "Nova-Proxy-Auto"\\n    type: url-test\\n    url: "http://www.gstatic.com/generate_204"\\n    interval: 300\\n    proxies:\\n' +
+      cleanIps.map((_, i) => '      - "Nova-VLESS-' + (i + 1) + '"').join('\\n') +
+      '\\nrules:\\n  - GEOIP,IR,DIRECT\\n  - MATCH,Nova-Proxy-Auto';
     return new Response(clashYaml, { headers: { 'Content-Type': 'text/yaml; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
   }
 
@@ -394,6 +394,13 @@ function handleSub(request, url, userUuid, cleanIps) {
 function renderWorkerPanelHtml(request, url, userUuid, cleanIps, emergencyStop) {
   const host = request.headers.get('Host') || url.hostname;
   const subLinkUrl = 'https://' + host + DEFAULT_SUB_PATH;
+  const novaDataJson = JSON.stringify({
+    uuid: userUuid,
+    host: host,
+    subUrl: subLinkUrl,
+    cleanIps: cleanIps,
+    emergencyStop: emergencyStop
+  });
 
   const html = \`<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -412,13 +419,7 @@ function renderWorkerPanelHtml(request, url, userUuid, cleanIps, emergencyStop) 
 <body class="min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-white">
 
   <script>
-    window.NOVA_DATA = {
-      uuid: "\${userUuid}",
-      host: "\${host}",
-      subUrl: "\${subLinkUrl}",
-      cleanIps: \${JSON.stringify(cleanIps)},
-      emergencyStop: \${emergencyStop}
-    };
+    window.NOVA_DATA = \` + novaDataJson + \`;
   </script>
 
   <div id="app">
