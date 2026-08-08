@@ -153,18 +153,49 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
     setPoolGenMessage(null);
 
     let poolItems: { ip: string; isp?: string; type?: string }[] = [];
+
+    // 1. Try reading community pool saved in LocalStorage
+    try {
+      const localPoolRaw = localStorage.getItem('nova_community_clean_pool');
+      if (localPoolRaw) {
+        const parsed = JSON.parse(localPoolRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          poolItems = parsed.map((item: any) => ({
+            ip: item.ip || item.address,
+            isp: item.isp || 'Clean Node',
+            type: item.type || (item.ip && item.ip.includes('.') && !item.ip.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'domain' : 'ip'),
+          }));
+        }
+      }
+    } catch (e) {
+      // LocalStorage read fallback
+    }
+
+    // 2. Fetch API pool and merge
     try {
       const resp = await fetch('/api/clean-ips/pool');
       if (resp.ok) {
         const data = await resp.json();
         if (data.success && Array.isArray(data.pool) && data.pool.length > 0) {
-          poolItems = data.pool;
+          const apiItems = data.pool;
+          // Merge avoiding duplicates
+          const existingIps = new Set(poolItems.map((p) => p.ip));
+          apiItems.forEach((item: any) => {
+            if (!existingIps.has(item.ip)) {
+              poolItems.push({
+                ip: item.ip,
+                isp: item.isp || 'Clean Pool Item',
+                type: item.type || (item.ip.includes('.') && !item.ip.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'domain' : 'ip'),
+              });
+            }
+          });
         }
       }
     } catch (e) {
-      // Ignore API errors
+      // API fetch error fallback
     }
 
+    // 3. Fallback defaults if still empty
     if (poolItems.length === 0) {
       poolItems = [
         { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', type: 'ip' },
@@ -193,7 +224,10 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
     const currentWorkerHost = host.trim() || 'my-worker.account.workers.dev';
     const currentUuid = uuid.trim() || generateRandomUuid();
 
-    const createdNodes: ProxyNode[] = poolItems.map((item, index) => {
+    // Create BOTH TCP & UDP configurations for ALL items in the pool!
+    const createdNodes: ProxyNode[] = [];
+
+    poolItems.forEach((item, index) => {
       const isDomain = item.type === 'domain' || !item.ip.match(/^\d+\.\d+\.\d+\.\d+$/);
       const itemIsp = item.isp || (isDomain ? 'Clean SNI' : 'Clean IP');
 
@@ -223,11 +257,12 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
       const testPorts = [443, 2053, 2087, 8443, 2083, 2096];
       const selectedPort = testPorts[index % testPorts.length];
 
-      return {
-        id: `pool-node-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+      // 1. High Speed TCP Node
+      createdNodes.push({
+        id: `pool-tcp-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
         name: isDomain
-          ? `Nova-SNI-${item.ip}-P${selectedPort}`
-          : `Nova-${itemIsp.split(' ')[0]}-${item.ip}-P${selectedPort}`,
+          ? `Nova-TCP-SNI-${item.ip}-P${selectedPort}`
+          : `Nova-TCP-${itemIsp.split(' ')[0]}-${item.ip}-P${selectedPort}`,
         protocol: 'vless',
         address: item.ip,
         port: selectedPort,
@@ -239,7 +274,7 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
         security: 'tls',
         transport: 'ws',
         proxyIp: proxyIp,
-        ispTag: itemIsp,
+        ispTag: `${itemIsp} [TCP]`,
         fragment: {
           enabled: true,
           length: fLen,
@@ -247,15 +282,42 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
           packets: fPackets,
           preset: fragPreset,
         },
-      };
+      });
+
+      // 2. Ultra Fast UDP / Gaming Node
+      createdNodes.push({
+        id: `pool-udp-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+        name: isDomain
+          ? `Nova-UDP-Gaming-${item.ip}-P${selectedPort}`
+          : `Nova-UDP-${itemIsp.split(' ')[0]}-${item.ip}-P${selectedPort}`,
+        protocol: 'vless',
+        address: item.ip,
+        port: selectedPort,
+        uuid: currentUuid,
+        path: '/vless-udp?ed=2048',
+        host: currentWorkerHost,
+        sni: isDomain ? item.ip : currentWorkerHost,
+        tls: true,
+        security: 'tls',
+        transport: 'ws',
+        proxyIp: proxyIp,
+        ispTag: `${itemIsp} [UDP/Gaming]`,
+        fragment: {
+          enabled: true,
+          length: fLen,
+          interval: fInt,
+          packets: fPackets,
+          preset: fragPreset,
+        },
+      });
     });
 
     setNodes((prev) => [...createdNodes, ...prev]);
     setLoadingPoolGen(false);
     setPoolGenMessage(
       isFa
-        ? `🌊 تعداد ${createdNodes.length} کانفیگ هوشمند بر اساس تمام آی‌پی‌ها و دامنه‌های استخر همگانی تولید و به لیست اضافه گردید!`
-        : `🌊 Created ${createdNodes.length} configs from all pool IPs/Domains and appended to subscription!`
+        ? `🌊 تعداد ${createdNodes.length} کانفیگ هوشمند دوگانه (TCP + UDP) از تمام ${poolItems.length} مورد موجود در استخر همگانی با موفقیت تولید و اضافه گردید!`
+        : `🌊 Created ${createdNodes.length} dual-protocol (TCP + UDP) configs from all ${poolItems.length} pool items!`
     );
   };
 
@@ -338,7 +400,7 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
               <span>
                 {loadingPoolGen
                   ? (isFa ? 'در حال دریافت و ساخت...' : 'Generating...')
-                  : (isFa ? '🌊 ساخت کانفیگ از موارد موجود در استخر (۲۰+ مورد)' : 'Generate Configs from Pool')}
+                  : (isFa ? '🌊 ساخت کانفیگ از تمامی موارد موجود در استخر (TCP + UDP)' : 'Generate Configs from All Pool Items (TCP + UDP)')}
               </span>
             </button>
 
