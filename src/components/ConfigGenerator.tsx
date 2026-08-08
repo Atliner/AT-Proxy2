@@ -45,6 +45,21 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
   const [loadingPoolGen, setLoadingPoolGen] = useState(false);
   const [syncingCf, setSyncingCf] = useState(false);
   const [poolGenMessage, setPoolGenMessage] = useState<string | null>(null);
+  const [poolItemCount, setPoolItemCount] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const saved1 = localStorage.getItem('nova_community_pool');
+      const saved2 = localStorage.getItem('nova_community_clean_pool');
+      const raw = saved1 || saved2;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPoolItemCount(parsed.length);
+        }
+      }
+    } catch (e) {}
+  }, []);
 
   const handleSyncToCloudflare = async () => {
     setSyncingCf(true);
@@ -154,9 +169,11 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
 
     let poolItems: { ip: string; isp?: string; type?: string }[] = [];
 
-    // 1. Try reading community pool saved in LocalStorage
+    // 1. Try reading community pool saved in LocalStorage (both keys for compatibility)
     try {
-      const localPoolRaw = localStorage.getItem('nova_community_clean_pool');
+      const saved1 = localStorage.getItem('nova_community_pool');
+      const saved2 = localStorage.getItem('nova_community_clean_pool');
+      const localPoolRaw = saved1 || saved2;
       if (localPoolRaw) {
         const parsed = JSON.parse(localPoolRaw);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -313,6 +330,7 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
     });
 
     setNodes((prev) => [...createdNodes, ...prev]);
+    setPoolItemCount(poolItems.length);
     setLoadingPoolGen(false);
     setPoolGenMessage(
       isFa
@@ -400,7 +418,9 @@ export const ConfigGenerator: React.FC<ConfigGeneratorProps> = ({
               <span>
                 {loadingPoolGen
                   ? (isFa ? 'در حال دریافت و ساخت...' : 'Generating...')
-                  : (isFa ? '🌊 ساخت کانفیگ از تمامی موارد موجود در استخر (TCP + UDP)' : 'Generate Configs from All Pool Items (TCP + UDP)')}
+                  : (isFa
+                      ? (poolItemCount ? `🌊 ساخت کانفیگ از تمامی ${poolItemCount} مورد استخر (TCP + UDP)` : '🌊 ساخت کانفیگ از تمامی موارد استخر (TCP + UDP)')
+                      : (poolItemCount ? `Generate Configs from All ${poolItemCount} Pool Items (TCP + UDP)` : 'Generate Configs from All Pool Items (TCP + UDP)'))}
               </span>
             </button>
 

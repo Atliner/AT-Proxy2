@@ -201,7 +201,9 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
   // Helper to manage community pool persistence in LocalStorage
   const getLocalCommunityPool = (): any[] => {
     try {
-      const saved = localStorage.getItem('nova_community_pool');
+      const saved1 = localStorage.getItem('nova_community_pool');
+      const saved2 = localStorage.getItem('nova_community_clean_pool');
+      const saved = saved1 || saved2;
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -212,7 +214,9 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
 
   const saveLocalCommunityPool = (pool: any[]) => {
     try {
-      localStorage.setItem('nova_community_pool', JSON.stringify(pool));
+      const json = JSON.stringify(pool);
+      localStorage.setItem('nova_community_pool', json);
+      localStorage.setItem('nova_community_clean_pool', json);
     } catch (e) {}
   };
 
