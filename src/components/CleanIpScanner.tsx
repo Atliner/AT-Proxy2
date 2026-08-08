@@ -197,25 +197,29 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     });
   };
 
+  // Helper to manage community pool persistence in LocalStorage
+  const getLocalCommunityPool = (): any[] => {
+    try {
+      const saved = localStorage.getItem('nova_community_pool');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  };
+
+  const saveLocalCommunityPool = (pool: any[]) => {
+    try {
+      localStorage.setItem('nova_community_pool', JSON.stringify(pool));
+    } catch (e) {}
+  };
+
   // Fetch Community Pool on load or tab switch
   const fetchCommunityPool = async () => {
     setPoolLoading(true);
-    try {
-      const resp = await fetch('/api/clean-ips/pool');
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success && Array.isArray(data.pool)) {
-          setCommunityPool(data.pool);
-          setPoolLoading(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Backend community pool API unavailable, using static fallback');
-    }
 
-    // Static community pool fallback for GitHub Pages
-    setCommunityPool([
+    const defaultStaticPool = [
       { ip: '104.16.51.111', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 165, status: 'ok', verifiedCount: 42, type: 'ip' },
       { ip: 'icook.hk', isp: 'Global Cloudflare CDN', city: 'Hong Kong Clean SNI', pingMs: 180, status: 'ok', verifiedCount: 38, type: 'domain' },
       { ip: '104.17.147.22', isp: 'Irancell (MTN)', city: 'Shiraz', pingMs: 145, status: 'ok', verifiedCount: 35, type: 'ip' },
@@ -224,7 +228,40 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
       { ip: 'speed.cloudflare.com', isp: 'Global Cloudflare CDN', city: 'Global Cloudflare', pingMs: 120, status: 'ok', verifiedCount: 25, type: 'domain' },
       { ip: '172.67.182.201', isp: 'Hamrah Avval (MCI)', city: 'Tehran', pingMs: 175, status: 'ok', verifiedCount: 24, type: 'ip' },
       { ip: 'visa.com', isp: 'Global Cloudflare CDN', city: 'Visa Edge CDN', pingMs: 190, status: 'ok', verifiedCount: 22, type: 'domain' }
-    ]);
+    ];
+
+    let mergedPool = getLocalCommunityPool();
+
+    try {
+      const resp = await fetch('/api/clean-ips/pool');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && Array.isArray(data.pool)) {
+          const apiPoolMap = new Map(data.pool.map((p: any) => [p.ip.toLowerCase(), p]));
+          mergedPool.forEach((lp) => {
+            if (!apiPoolMap.has(lp.ip.toLowerCase())) {
+              apiPoolMap.set(lp.ip.toLowerCase(), lp);
+            }
+          });
+          const result = Array.from(apiPoolMap.values());
+          setCommunityPool(result);
+          saveLocalCommunityPool(result);
+          setPoolLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Backend community pool API unavailable, using static/local fallback');
+    }
+
+    // Static fallback merged with local storage
+    const poolMap = new Map(defaultStaticPool.map((p) => [p.ip.toLowerCase(), p]));
+    mergedPool.forEach((lp) => {
+      poolMap.set(lp.ip.toLowerCase(), lp);
+    });
+    const finalPool = Array.from(poolMap.values());
+    setCommunityPool(finalPool);
+    saveLocalCommunityPool(finalPool);
     setPoolLoading(false);
   };
 
@@ -404,11 +441,8 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
     setScanning(false);
 
     if (workingFound.length > 0) {
-      setPoolSyncStatus(
-        isFa
-          ? `✅ اسکن با موفقیت کامل شد! ${workingFound.length} مورد فعال و سالم پاسخگوی پینگ ثبت شد!`
-          : `✅ Scan finished! ${workingFound.length} clean endpoints verified active!`
-      );
+      const workingIps = Array.from(new Set(workingFound.map((w) => w.ip)));
+
       try {
         await fetch('/api/clean-ips/sync', {
           method: 'POST',
@@ -419,13 +453,67 @@ export const CleanIpScanner: React.FC<CleanIpScannerProps> = ({
         // Ignored on static site hosting
       }
 
-      // Instantly update community pool state with newly verified working items
+      // 1. Instantly update & persist community pool state
       setCommunityPool((prev) => {
-        const existingIps = new Set(prev.map((p) => p.ip));
-        const newItems = workingFound.filter((w) => !existingIps.has(w.ip));
-        return [...prev, ...newItems];
+        const existingMap = new Map<string, (typeof prev)[number]>(prev.map((p) => [p.ip.toLowerCase(), p]));
+        workingFound.forEach((w) => {
+          const isDomain = w.type === 'domain' || !w.ip.match(/^\d+\.\d+\.\d+\.\d+$/);
+          const existing = existingMap.get(w.ip.toLowerCase());
+          if (existing) {
+            existingMap.set(w.ip.toLowerCase(), {
+              ...existing,
+              pingMs: w.pingMs || 100,
+              status: 'ok',
+              verifiedCount: (existing.verifiedCount || 1) + 1,
+            });
+          } else {
+            existingMap.set(w.ip.toLowerCase(), {
+              ip: w.ip,
+              isp: w.isp || 'Global CDN',
+              city: w.city || 'Edge CDN',
+              pingMs: w.pingMs || 100,
+              status: 'ok',
+              verifiedCount: 1,
+              type: isDomain ? 'domain' : 'ip',
+            });
+          }
+        });
+        const updatedPool = Array.from(existingMap.values());
+        saveLocalCommunityPool(updatedPool);
+        return updatedPool;
       });
-      fetchCommunityPool();
+
+      // 2. Save working clean IPs to localStorage
+      try {
+        localStorage.setItem('nova_cf_clean_ips', JSON.stringify(workingIps));
+      } catch (e) {}
+
+      // 3. Auto-apply working IPs to all node configs
+      if (onExportCleanIpsToNodes && workingIps.length > 0) {
+        onExportCleanIpsToNodes(workingIps);
+      }
+
+      // 4. Auto-sync to Cloudflare Worker edge script if Cloudflare token is available
+      const hasToken = !!localStorage.getItem('nova_cf_token');
+      let cfSyncText = '';
+      if (hasToken && workingIps.length > 0) {
+        try {
+          const syncRes = await autoSyncWorkerToCloudflare({ cleanIps: workingIps });
+          if (syncRes.success) {
+            cfSyncText = isFa
+              ? ' ⚡ و کد ورکر کلاودفلر نیز با آی‌پی‌های جدید آپدیت گردید!'
+              : ' ⚡ and Cloudflare Worker script was automatically updated!';
+          }
+        } catch (e) {
+          console.warn('Auto CF sync note:', e);
+        }
+      }
+
+      setPoolSyncStatus(
+        isFa
+          ? `✅ اسکن کامل شد! ${workingIps.length} مورد سالم به صورت اتوماتیک به استخر همگانی و تمام کانفیگ‌ها اضافه شد${cfSyncText}`
+          : `✅ Scan finished! ${workingIps.length} clean endpoints automatically added to pool & configs!${cfSyncText}`
+      );
     } else {
       setPoolSyncStatus(
         isFa
